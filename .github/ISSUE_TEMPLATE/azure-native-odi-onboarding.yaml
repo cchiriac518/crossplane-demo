@@ -15,10 +15,18 @@ body:
     id: team_name
     attributes:
       label: Team Name
-      placeholder: e.g. platform-team
+      placeholder: e.g. dataprocessing
     validations:
       required: true
-
+      
+  - type: input
+    id: component_name
+    attributes:
+      label: Component Name
+      placeholder: e.g. backend, ingester
+    validations:
+      required: true
+      
   - type: checkboxes
     id: onboarding_scope
     attributes:
@@ -38,7 +46,7 @@ body:
         The `product` will be automatically set to your **Team Name**.
         These will be used to create an Event Hub following the naming convention:
         ```
-        {team_name}-{env}-{region_short}-diagnostic-logs
+        {team_name}-{component_name}-{env}-{region_short}-logs
         ```
         You also need to provide a **Service Principal (SP)** per environment — the SP will automatically be granted **Event Hub Sender** role on your environment-specific Event Hubs.
         
@@ -48,14 +56,6 @@ body:
     attributes:
       value: |
         ### 🔵 DEV
-
-  - type: input
-    id: logs_dev_component
-    attributes:
-      label: "DEV — component"
-      placeholder: e.g. backend
-    validations:
-      required: false
 
   - type: input
     id: logs_dev_sp
@@ -71,14 +71,6 @@ body:
         ### 🟡 INT
 
   - type: input
-    id: logs_int_component
-    attributes:
-      label: "INT — component"
-      placeholder: e.g. backend
-    validations:
-      required: false
-
-  - type: input
     id: logs_int_sp
     attributes:
       label: "INT — Service Principal (SP) Object ID or App ID"
@@ -92,14 +84,6 @@ body:
         ### 🟠 PRE
 
   - type: input
-    id: logs_pre_component
-    attributes:
-      label: "PRE — component"
-      placeholder: e.g. backend
-    validations:
-      required: false
-
-  - type: input
     id: logs_pre_sp
     attributes:
       label: "PRE — Service Principal (SP) Object ID or App ID"
@@ -111,14 +95,6 @@ body:
     attributes:
       value: |
         ### 🔴 PROD
-
-  - type: input
-    id: logs_prod_component
-    attributes:
-      label: "PROD — component"
-      placeholder: e.g. backend
-    validations:
-      required: false
 
   - type: input
     id: logs_prod_sp
