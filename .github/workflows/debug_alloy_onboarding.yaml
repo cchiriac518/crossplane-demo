@@ -8,7 +8,8 @@ jobs:
   parse-and-echo:
     name: Echo Issue Inputs
     runs-on: ubuntu-latest
-
+    permissions:
+      issues: write
     steps:
       - name: Debug raw body
         env:
