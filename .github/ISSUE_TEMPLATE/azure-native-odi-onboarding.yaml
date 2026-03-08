@@ -1,6 +1,6 @@
 name: 📡 Alloy Onboarding Request
 description: Onboard your team to Alloy for logs and/or metrics collection from Azure
-title: "[Alloy Onboarding]: <Team>"
+title: "Azure Native Onboarding for Team: "
 labels: ["alloy-onboarding", "needs-triage"]
 body:
   - type: markdown
