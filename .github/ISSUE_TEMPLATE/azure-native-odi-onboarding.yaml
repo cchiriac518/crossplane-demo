@@ -1,6 +1,6 @@
 name: 📡 Alloy Onboarding Request
 description: Onboard your team to Alloy for logs and/or metrics collection from Azure
-title: "[Alloy Onboarding]: <team/product name>"
+title: "[Alloy Onboarding]: <Team>"
 labels: ["alloy-onboarding", "needs-triage"]
 body:
   - type: markdown
@@ -15,18 +15,9 @@ body:
     id: team_name
     attributes:
       label: Team Name
-      placeholder: e.g. product-team
+      placeholder: e.g. platform-team
     validations:
       required: true
-
-  - type: input
-    id: product_component
-    attributes:
-      label: Product Component Name
-      placeholder: e.g. ingester
-    validations:
-      required: true
-
 
   - type: checkboxes
     id: onboarding_scope
@@ -43,10 +34,11 @@ body:
         ---
         ## 📋 Logs Onboarding
         
-        Logs are pulled from Azure Event Hub. For each environment, provide a `product` and `component` value.
+        Logs are pulled from Azure Event Hub. For each environment, provide a `component` value.
+        The `product` will be automatically set to your **Team Name**.
         These will be used to create an Event Hub following the naming convention:
         ```
-        {product}-{env}-{region_short}-diagnostic-logs
+        {team_name}-{env}-{region_short}-diagnostic-logs
         ```
         You also need to provide a **Service Principal (SP)** per environment — the SP will automatically be granted **Event Hub Sender** role on your environment-specific Event Hubs.
         
@@ -56,14 +48,6 @@ body:
     attributes:
       value: |
         ### 🔵 DEV
-
-  - type: input
-    id: logs_dev_product
-    attributes:
-      label: "DEV — product"
-      placeholder: e.g. myapp
-    validations:
-      required: false
 
   - type: input
     id: logs_dev_component
@@ -87,14 +71,6 @@ body:
         ### 🟡 INT
 
   - type: input
-    id: logs_int_product
-    attributes:
-      label: "INT — product"
-      placeholder: e.g. myapp
-    validations:
-      required: false
-
-  - type: input
     id: logs_int_component
     attributes:
       label: "INT — component"
@@ -116,14 +92,6 @@ body:
         ### 🟠 PRE
 
   - type: input
-    id: logs_pre_product
-    attributes:
-      label: "PRE — product"
-      placeholder: e.g. myapp
-    validations:
-      required: false
-
-  - type: input
     id: logs_pre_component
     attributes:
       label: "PRE — component"
@@ -143,14 +111,6 @@ body:
     attributes:
       value: |
         ### 🔴 PROD
-
-  - type: input
-    id: logs_prod_product
-    attributes:
-      label: "PROD — product"
-      placeholder: e.g. myapp
-    validations:
-      required: false
 
   - type: input
     id: logs_prod_component
