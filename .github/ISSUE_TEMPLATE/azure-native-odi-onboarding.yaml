@@ -116,10 +116,10 @@ body:
         >
         > | Environment | Alloy Service Principal |
         > |-------------|------------------------|
-        > | DEV | `Alloy_SP_dev` |
-        > | INT | `Alloy_SP_int` |
-        > | PRE | `Alloy_SP_pre` |
-        > | PROD | `Alloy_SP_prod` |
+        > | DEV | `50b91111-cc45-4856-89c3-2222daf75a4f` |
+        > | INT | `50b92222-cc45-4856-89c3-3333daf75a4f` |
+        > | PRE | `50b93333-cc45-4856-89c3-4444daf75a4f` |
+        > | PRD | `50b94444-cc45-4856-89c3-5555daf75a4f` |
         
         > Skip this section if you are not onboarding for metrics.
 
