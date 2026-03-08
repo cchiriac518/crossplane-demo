@@ -10,76 +10,88 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Echo raw issue body
+      - name: Parse team name and rename issue title
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
         run: |
+          TEAM_NAME=$(echo "$ISSUE_BODY" | grep -A1 "^### Team Name" | tail -n1 | xargs)
+          echo "Parsed Team Name: $TEAM_NAME"
+
+          if [ -n "$TEAM_NAME" ]; then
+            NEW_TITLE="[Alloy Onboarding]: $TEAM_NAME"
+            echo "Updating issue title to: $NEW_TITLE"
+            gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --title "$NEW_TITLE"
+          else
+            echo "Team Name not found, skipping title update"
+          fi
+
+      - name: Parse and echo all fields
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          extract() {
+            local label="$1"
+            echo "$ISSUE_BODY" | grep -A1 "### $label" | tail -n1 | xargs
+          }
+
+          TEAM_NAME=$(extract 'Team Name')
+
           echo "========================================"
           echo "ISSUE NUMBER : ${{ github.event.issue.number }}"
           echo "ISSUE TITLE  : ${{ github.event.issue.title }}"
           echo "SUBMITTED BY : ${{ github.event.issue.user.login }}"
           echo "========================================"
 
-      - name: Parse and echo all fields
-        env:
-          ISSUE_BODY: ${{ github.event.issue.body }}
-        run: |
-          echo "----------------------------------------"
-          echo "RAW BODY:"
-          echo "----------------------------------------"
-          echo "$ISSUE_BODY"
-          echo "----------------------------------------"
-
-          extract() {
-            local label="$1"
-            echo "$ISSUE_BODY" | grep -A1 "### $label" | tail -n1 | xargs
-          }
-
           echo ""
           echo "======== GENERAL ========"
-          echo "Team Name         : $(extract 'Team Name')"
+          echo "Team Name (= product for all envs) : $TEAM_NAME"
 
           echo ""
           echo "======== LOGS — DEV ========"
-          echo "Product           : $(extract 'DEV — product' | head -1)"
-          echo "Component         : $(extract 'DEV — component' | head -1)"
-          echo "SP                : $(extract 'DEV — Service Principal (SP) Object ID or App ID' | head -1)"
+          echo "Product (auto)    : $TEAM_NAME"
+          echo "Component         : $(extract 'DEV — component')"
+          echo "SP                : $(extract 'DEV — Service Principal (SP) Object ID or App ID')"
 
           echo ""
           echo "======== LOGS — INT ========"
-          echo "Product           : $(extract 'INT — product')"
+          echo "Product (auto)    : $TEAM_NAME"
           echo "Component         : $(extract 'INT — component')"
           echo "SP                : $(extract 'INT — Service Principal (SP) Object ID or App ID')"
 
           echo ""
           echo "======== LOGS — PRE ========"
-          echo "Product           : $(extract 'PRE — product')"
+          echo "Product (auto)    : $TEAM_NAME"
           echo "Component         : $(extract 'PRE — component')"
           echo "SP                : $(extract 'PRE — Service Principal (SP) Object ID or App ID')"
 
           echo ""
           echo "======== LOGS — PROD ========"
-          echo "Product           : $(extract 'PROD — product')"
+          echo "Product (auto)    : $TEAM_NAME"
           echo "Component         : $(extract 'PROD — component')"
           echo "SP                : $(extract 'PROD — Service Principal (SP) Object ID or App ID')"
 
           echo ""
           echo "======== METRICS — DEV ========"
           echo "Subscription IDs  :"
-          echo "$ISSUE_BODY" | grep -A5 "DEV — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
+          echo "$ISSUE_BODY" | grep -A10 "DEV — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
 
           echo ""
           echo "======== METRICS — INT ========"
           echo "Subscription IDs  :"
-          echo "$ISSUE_BODY" | grep -A5 "INT — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
+          echo "$ISSUE_BODY" | grep -A10 "INT — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
 
           echo ""
           echo "======== METRICS — PRE ========"
           echo "Subscription IDs  :"
-          echo "$ISSUE_BODY" | grep -A5 "PRE — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
+          echo "$ISSUE_BODY" | grep -A10 "PRE — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
 
           echo ""
           echo "======== METRICS — PROD ========"
           echo "Subscription IDs  :"
-          echo "$ISSUE_BODY" | grep -A5 "PROD — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
+          echo "$ISSUE_BODY" | grep -A10 "PROD — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
 
           echo ""
           echo "========================================"
