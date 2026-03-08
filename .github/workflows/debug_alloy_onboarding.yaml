@@ -10,6 +10,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Debug raw body
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          echo "=== RAW BODY WITH VISIBLE CHARS ==="
+          echo "$ISSUE_BODY" | cat -A | head -40
+
       - name: Parse team name and rename issue title
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -17,7 +24,9 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
         run: |
-          TEAM_NAME=$(echo "$ISSUE_BODY" | grep -A1 "^### Team Name" | tail -n1 | xargs)
+          CLEAN_BODY=$(echo "$ISSUE_BODY" | tr -d '\r')
+
+          TEAM_NAME=$(echo "$CLEAN_BODY" | grep -A1 "^### Team Name" | tail -n1 | xargs)
           echo "Parsed Team Name: $TEAM_NAME"
 
           if [ -n "$TEAM_NAME" ]; then
@@ -32,9 +41,11 @@ jobs:
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
+          CLEAN_BODY=$(echo "$ISSUE_BODY" | tr -d '\r')
+
           extract() {
             local label="$1"
-            echo "$ISSUE_BODY" | grep -A1 "### $label" | tail -n1 | xargs
+            echo "$CLEAN_BODY" | grep -A1 "^### $label" | tail -n1 | xargs
           }
 
           TEAM_NAME=$(extract 'Team Name')
@@ -82,22 +93,22 @@ jobs:
           echo ""
           echo "======== METRICS — DEV ========"
           echo "Subscription IDs:"
-          echo "$ISSUE_BODY" | grep -A10 "DEV — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
+          echo "$CLEAN_BODY" | grep -A10 "DEV — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
 
           echo ""
           echo "======== METRICS — INT ========"
           echo "Subscription IDs:"
-          echo "$ISSUE_BODY" | grep -A10 "INT — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
+          echo "$CLEAN_BODY" | grep -A10 "INT — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
 
           echo ""
           echo "======== METRICS — PRE ========"
           echo "Subscription IDs:"
-          echo "$ISSUE_BODY" | grep -A10 "PRE — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
+          echo "$CLEAN_BODY" | grep -A10 "PRE — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
 
           echo ""
           echo "======== METRICS — PROD ========"
           echo "Subscription IDs:"
-          echo "$ISSUE_BODY" | grep -A10 "PROD — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
+          echo "$CLEAN_BODY" | grep -A10 "PROD — Subscription ID" | grep -E '^[0-9a-f-]{36}$' | while read sub; do echo "  - $sub"; done
 
           echo ""
           echo "========================================"
