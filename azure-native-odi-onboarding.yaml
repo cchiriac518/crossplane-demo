@@ -1,0 +1,341 @@
+name: 📡 Alloy Onboarding Request
+description: Onboard your team to Alloy for logs and/or metrics collection from Azure
+title: "[Alloy Onboarding]: <team/product name>"
+labels: ["alloy-onboarding", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 📡 Alloy Onboarding Request
+        Use this template to onboard your team to Alloy for **logs** (via Azure Event Hub) and/or **metrics** (via Azure subscription scraping).
+        
+        Fill in only the sections relevant to what you need — logs, metrics, or both.
+
+  - type: input
+    id: team_name
+    attributes:
+      label: Team Name
+      placeholder: e.g. product-team
+    validations:
+      required: true
+
+  - type: input
+    id: product_component
+    attributes:
+      label: Product Component Name
+      placeholder: e.g. ingester
+    validations:
+      required: true
+
+
+  - type: checkboxes
+    id: onboarding_scope
+    attributes:
+      label: Onboarding Scope
+      description: Select what you want to onboard for.
+      options:
+        - label: 📋 Logs (Azure Event Hub)
+        - label: 📊 Metrics (Azure Subscription scraping)
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ## 📋 Logs Onboarding
+        
+        Logs are pulled from Azure Event Hub. For each environment, provide a `product` and `component` value.
+        These will be used to create an Event Hub following the naming convention:
+        ```
+        {product}-{env}-{region_short}-diagnostic-logs
+        ```
+        You also need to provide a **Service Principal (SP)** per environment — the SP will automatically be granted **Event Hub Sender** role on your environment-specific Event Hubs.
+        
+        > Skip this section if you are not onboarding for logs.
+
+  - type: markdown
+    attributes:
+      value: |
+        ### 🔵 DEV
+
+  - type: input
+    id: logs_dev_product
+    attributes:
+      label: "DEV — product"
+      placeholder: e.g. myapp
+    validations:
+      required: false
+
+  - type: input
+    id: logs_dev_component
+    attributes:
+      label: "DEV — component"
+      placeholder: e.g. backend
+    validations:
+      required: false
+
+  - type: input
+    id: logs_dev_sp
+    attributes:
+      label: "DEV — Service Principal (SP) Object ID or App ID"
+      placeholder: e.g. xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ### 🟡 INT
+
+  - type: input
+    id: logs_int_product
+    attributes:
+      label: "INT — product"
+      placeholder: e.g. myapp
+    validations:
+      required: false
+
+  - type: input
+    id: logs_int_component
+    attributes:
+      label: "INT — component"
+      placeholder: e.g. backend
+    validations:
+      required: false
+
+  - type: input
+    id: logs_int_sp
+    attributes:
+      label: "INT — Service Principal (SP) Object ID or App ID"
+      placeholder: e.g. xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ### 🟠 PRE
+
+  - type: input
+    id: logs_pre_product
+    attributes:
+      label: "PRE — product"
+      placeholder: e.g. myapp
+    validations:
+      required: false
+
+  - type: input
+    id: logs_pre_component
+    attributes:
+      label: "PRE — component"
+      placeholder: e.g. backend
+    validations:
+      required: false
+
+  - type: input
+    id: logs_pre_sp
+    attributes:
+      label: "PRE — Service Principal (SP) Object ID or App ID"
+      placeholder: e.g. xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ### 🔴 PROD
+
+  - type: input
+    id: logs_prod_product
+    attributes:
+      label: "PROD — product"
+      placeholder: e.g. myapp
+    validations:
+      required: false
+
+  - type: input
+    id: logs_prod_component
+    attributes:
+      label: "PROD — component"
+      placeholder: e.g. backend
+    validations:
+      required: false
+
+  - type: input
+    id: logs_prod_sp
+    attributes:
+      label: "PROD — Service Principal (SP) Object ID or App ID"
+      placeholder: e.g. xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ## 📊 Metrics Onboarding
+        
+        Metrics are scraped per Azure subscription. For each environment, provide the subscription ID(s) to scrape.
+        
+        > ⚠️ **Pre-requisite**: Before submitting, you **must** have already granted the environment-specific Alloy Service Principal the **Monitoring Reader** role on every subscription you list.
+        >
+        > | Environment | Alloy Service Principal |
+        > |-------------|------------------------|
+        > | DEV | `Alloy_SP_dev` |
+        > | INT | `Alloy_SP_int` |
+        > | PRE | `Alloy_SP_pre` |
+        > | PROD | `Alloy_SP_prod` |
+        
+        > Skip this section if you are not onboarding for metrics.
+
+  - type: markdown
+    attributes:
+      value: |
+        ### 🔵 DEV
+
+  - type: textarea
+    id: metrics_dev_subs
+    attributes:
+      label: "DEV — Subscription ID(s)"
+      description: One subscription ID per line.
+      placeholder: |
+        xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+        yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: metrics_dev_resource_types
+    attributes:
+      label: "DEV — Resource Types to scrape"
+      options:
+        - label: Key Vault
+        - label: Storage Account
+        - label: VNet
+        - label: Databricks
+
+  - type: checkboxes
+    id: metrics_dev_iam_confirm
+    attributes:
+      label: "DEV — IAM Confirmation"
+      options:
+        - label: I confirm that `Alloy_SP_dev` has been granted **Monitoring Reader** on all DEV subscriptions listed above
+
+  - type: markdown
+    attributes:
+      value: |
+        ### 🟡 INT
+
+  - type: textarea
+    id: metrics_int_subs
+    attributes:
+      label: "INT — Subscription ID(s)"
+      description: One subscription ID per line.
+      placeholder: |
+        xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: metrics_int_resource_types
+    attributes:
+      label: "INT — Resource Types to scrape"
+      options:
+        - label: Key Vault
+        - label: Storage Account
+        - label: VNet
+        - label: Databricks
+
+  - type: checkboxes
+    id: metrics_int_iam_confirm
+    attributes:
+      label: "INT — IAM Confirmation"
+      options:
+        - label: I confirm that `Alloy_SP_int` has been granted **Monitoring Reader** on all INT subscriptions listed above
+
+  - type: markdown
+    attributes:
+      value: |
+        ### 🟠 PRE
+
+  - type: textarea
+    id: metrics_pre_subs
+    attributes:
+      label: "PRE — Subscription ID(s)"
+      description: One subscription ID per line.
+      placeholder: |
+        xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: metrics_pre_resource_types
+    attributes:
+      label: "PRE — Resource Types to scrape"
+      options:
+        - label: Key Vault
+        - label: Storage Account
+        - label: VNet
+        - label: Databricks
+
+  - type: checkboxes
+    id: metrics_pre_iam_confirm
+    attributes:
+      label: "PRE — IAM Confirmation"
+      options:
+        - label: I confirm that `Alloy_SP_pre` has been granted **Monitoring Reader** on all PRE subscriptions listed above
+
+  - type: markdown
+    attributes:
+      value: |
+        ### 🔴 PROD
+
+  - type: textarea
+    id: metrics_prod_subs
+    attributes:
+      label: "PROD — Subscription ID(s)"
+      description: One subscription ID per line.
+      placeholder: |
+        xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: metrics_prod_resource_types
+    attributes:
+      label: "PROD — Resource Types to scrape"
+      options:
+        - label: Key Vault
+        - label: Storage Account
+        - label: VNet
+        - label: Databricks
+
+  - type: checkboxes
+    id: metrics_prod_iam_confirm
+    attributes:
+      label: "PROD — IAM Confirmation"
+      options:
+        - label: I confirm that `Alloy_SP_prod` has been granted **Monitoring Reader** on all PROD subscriptions listed above
+
+  - type: markdown
+    attributes:
+      value: ---
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional Context
+      description: Any other information relevant to this onboarding request.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: final_checklist
+    attributes:
+      label: Submission Checklist
+      options:
+        - label: I have filled in all relevant sections for the environments I want to onboard
+          required: true
+        - label: For **logs** — I have provided a valid SP per environment
+          required: false
+        - label: For **metrics** — I have confirmed Monitoring Reader is assigned for all listed subscriptions
+          required: false
