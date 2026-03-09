@@ -47,6 +47,7 @@ jobs:
 
           TEAM_NAME=$(extract 'Team Name')
           COMPONENT_NAME=$(extract 'Component Name')
+          REGION_SHORT=$(extract 'Azure Region')
 
           echo "========================================"
           echo "ISSUE NUMBER : ${{ github.event.issue.number }}"
@@ -58,33 +59,34 @@ jobs:
           echo "======== GENERAL ========"
           echo "Team Name      : $TEAM_NAME"
           echo "Component Name : $COMPONENT_NAME"
+          echo "Azure Region   : $REGION_SHORT"
 
           echo ""
           echo "======== LOGS — DEV ========"
           echo "Product (auto) : $TEAM_NAME"
           echo "Component      : $COMPONENT_NAME"
-          echo "EventHub name  : ${TEAM_NAME}-${COMPONENT_NAME}-dev-<region_short>-logs"
+          echo "EventHub name  : ${TEAM_NAME}-${COMPONENT_NAME}-dev-${REGION_SHORT}-logs"
           echo "SP             : $(extract 'DEV — Service Principal \(SP\) Object ID or App ID')"
 
           echo ""
           echo "======== LOGS — INT ========"
           echo "Product (auto) : $TEAM_NAME"
           echo "Component      : $COMPONENT_NAME"
-          echo "EventHub name  : ${TEAM_NAME}-${COMPONENT_NAME}-int-<region_short>-logs"
+          echo "EventHub name  : ${TEAM_NAME}-${COMPONENT_NAME}-int-${REGION_SHORT}-logs"
           echo "SP             : $(extract 'INT — Service Principal \(SP\) Object ID or App ID')"
 
           echo ""
           echo "======== LOGS — PRE ========"
           echo "Product (auto) : $TEAM_NAME"
           echo "Component      : $COMPONENT_NAME"
-          echo "EventHub name  : ${TEAM_NAME}-${COMPONENT_NAME}-pre-<region_short>-logs"
+          echo "EventHub name  : ${TEAM_NAME}-${COMPONENT_NAME}-pre-${REGION_SHORT}-logs"
           echo "SP             : $(extract 'PRE — Service Principal \(SP\) Object ID or App ID')"
 
           echo ""
           echo "======== LOGS — PROD ========"
           echo "Product (auto) : $TEAM_NAME"
           echo "Component      : $COMPONENT_NAME"
-          echo "EventHub name  : ${TEAM_NAME}-${COMPONENT_NAME}-prod-<region_short>-logs"
+          echo "EventHub name  : ${TEAM_NAME}-${COMPONENT_NAME}-prod-${REGION_SHORT}-logs"
           echo "SP             : $(extract 'PROD — Service Principal \(SP\) Object ID or App ID')"
 
           echo ""
