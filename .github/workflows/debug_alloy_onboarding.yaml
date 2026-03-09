@@ -51,7 +51,7 @@ jobs:
 
           echo "========================================"
           echo "ISSUE NUMBER : ${{ github.event.issue.number }}"
-          echo "ISSUE TITLE  : ${{ github.event.issue.title }}"
+          echo "ISSUE TITLE  : Azure Native Onboarding for Team: $TEAM_NAME"
           echo "SUBMITTED BY : ${{ github.event.issue.user.login }}"
           echo "========================================"
 
