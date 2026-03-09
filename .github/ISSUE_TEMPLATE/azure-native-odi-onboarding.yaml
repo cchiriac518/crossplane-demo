@@ -26,7 +26,15 @@ body:
       placeholder: e.g. backend, ingester
     validations:
       required: true
-      
+  
+  - type: input
+    id: region_short
+    attributes:
+      label: Azure Region
+      placeholder: e.g. euw, usw2
+    validations:
+      required: true
+  
   - type: checkboxes
     id: onboarding_scope
     attributes:
