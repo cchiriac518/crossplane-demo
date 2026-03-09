@@ -148,16 +148,6 @@ body:
       required: false
 
   - type: checkboxes
-    id: metrics_dev_resource_types
-    attributes:
-      label: "DEV — Resource Types to scrape"
-      options:
-        - label: Key Vault
-        - label: Storage Account
-        - label: VNet
-        - label: Databricks
-
-  - type: checkboxes
     id: metrics_dev_iam_confirm
     attributes:
       label: "DEV — IAM Confirmation"
@@ -179,15 +169,6 @@ body:
     validations:
       required: false
 
-  - type: checkboxes
-    id: metrics_int_resource_types
-    attributes:
-      label: "INT — Resource Types to scrape"
-      options:
-        - label: Key Vault
-        - label: Storage Account
-        - label: VNet
-        - label: Databricks
 
   - type: checkboxes
     id: metrics_int_iam_confirm
@@ -212,16 +193,6 @@ body:
       required: false
 
   - type: checkboxes
-    id: metrics_pre_resource_types
-    attributes:
-      label: "PRE — Resource Types to scrape"
-      options:
-        - label: Key Vault
-        - label: Storage Account
-        - label: VNet
-        - label: Databricks
-
-  - type: checkboxes
     id: metrics_pre_iam_confirm
     attributes:
       label: "PRE — IAM Confirmation"
@@ -242,16 +213,6 @@ body:
         xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
     validations:
       required: false
-
-  - type: checkboxes
-    id: metrics_prod_resource_types
-    attributes:
-      label: "PROD — Resource Types to scrape"
-      options:
-        - label: Key Vault
-        - label: Storage Account
-        - label: VNet
-        - label: Databricks
 
   - type: checkboxes
     id: metrics_prod_iam_confirm
