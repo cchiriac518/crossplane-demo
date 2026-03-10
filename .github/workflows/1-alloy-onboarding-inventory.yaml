@@ -44,48 +44,45 @@ jobs:
           PRE_SP=$(get_field   "PRE — Service Principal .SP. Object ID or App ID")
           PROD_SP=$(get_field  "PROD — Service Principal .SP. Object ID or App ID")
 
-          # Metrics subs: one per line → newline-separated
+          EOF=$(openssl rand -hex 8)
+
           METRICS_DEV=$(get_area  "DEV — Subscription ID.s.")
+          echo "metrics_dev<<$EOF"  >> $GITHUB_OUTPUT
+          echo "$METRICS_DEV"       >> $GITHUB_OUTPUT
+          echo "$EOF"               >> $GITHUB_OUTPUT
+
           METRICS_INT=$(get_area  "INT — Subscription ID.s.")
+          echo "metrics_int<<$EOF"  >> $GITHUB_OUTPUT
+          echo "$METRICS_INT"       >> $GITHUB_OUTPUT
+          echo "$EOF"               >> $GITHUB_OUTPUT
+
           METRICS_PRE=$(get_area  "PRE — Subscription ID.s.")
+          echo "metrics_pre<<$EOF"  >> $GITHUB_OUTPUT
+          echo "$METRICS_PRE"       >> $GITHUB_OUTPUT
+          echo "$EOF"               >> $GITHUB_OUTPUT
+
           METRICS_PROD=$(get_area "PROD — Subscription ID.s.")
+          echo "metrics_prod<<$EOF" >> $GITHUB_OUTPUT
+          echo "$METRICS_PROD"      >> $GITHUB_OUTPUT
+          echo "$EOF"               >> $GITHUB_OUTPUT
 
           SAFE=$(echo "$TEAM" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '_')
           BRANCH="feature/onboarding_${SAFE}_#${{ github.event.issue.number }}"
 
-          # Use multiline output delimiter for subs (they contain newlines)
-          EOF=$(openssl rand -hex 8)
-
-          echo "team=$TEAM"               >> $GITHUB_OUTPUT
-          echo "component=$COMPONENT"     >> $GITHUB_OUTPUT
-          echo "region=$REGION"           >> $GITHUB_OUTPUT
-          echo "branch=$BRANCH"           >> $GITHUB_OUTPUT
-          echo "safe=$SAFE"               >> $GITHUB_OUTPUT
-          echo "dev_sp=$DEV_SP"           >> $GITHUB_OUTPUT
-          echo "int_sp=$INT_SP"           >> $GITHUB_OUTPUT
-          echo "pre_sp=$PRE_SP"           >> $GITHUB_OUTPUT
-          echo "prod_sp=$PROD_SP"         >> $GITHUB_OUTPUT
-
-          echo "metrics_dev<<$EOF"        >> $GITHUB_OUTPUT
-          echo "$METRICS_DEV"             >> $GITHUB_OUTPUT
-          echo "$EOF"                     >> $GITHUB_OUTPUT
-
-          echo "metrics_int<<$EOF"        >> $GITHUB_OUTPUT
-          echo "$METRICS_INT"             >> $GITHUB_OUTPUT
-          echo "$EOF"                     >> $GITHUB_OUTPUT
-
-          echo "metrics_pre<<$EOF"        >> $GITHUB_OUTPUT
-          echo "$METRICS_PRE"             >> $GITHUB_OUTPUT
-          echo "$EOF"                     >> $GITHUB_OUTPUT
-
-          echo "metrics_prod<<$EOF"       >> $GITHUB_OUTPUT
-          echo "$METRICS_PROD"            >> $GITHUB_OUTPUT
-          echo "$EOF"                     >> $GITHUB_OUTPUT
+          echo "team=$TEAM"         >> $GITHUB_OUTPUT
+          echo "component=$COMPONENT" >> $GITHUB_OUTPUT
+          echo "region=$REGION"     >> $GITHUB_OUTPUT
+          echo "branch=$BRANCH"     >> $GITHUB_OUTPUT
+          echo "safe=$SAFE"         >> $GITHUB_OUTPUT
+          echo "dev_sp=$DEV_SP"     >> $GITHUB_OUTPUT
+          echo "int_sp=$INT_SP"     >> $GITHUB_OUTPUT
+          echo "pre_sp=$PRE_SP"     >> $GITHUB_OUTPUT
+          echo "prod_sp=$PROD_SP"   >> $GITHUB_OUTPUT
 
           echo "✅ Parsed: team=$TEAM component=$COMPONENT region=$REGION"
 
       # ----------------------------------------------------------------
-      # 2. Validate inputs — fail fast with a clear issue comment
+      # 2. Validate — fail fast with issue comment
       # ----------------------------------------------------------------
       - name: Validate inputs
         id: validate
@@ -100,26 +97,23 @@ jobs:
         run: |
           ERRORS=""
 
-          # Required fields
           [ -z "$TEAM" ]      && ERRORS="$ERRORS\n- ❌ Team Name is required"
           [ -z "$COMPONENT" ] && ERRORS="$ERRORS\n- ❌ Component Name is required"
           [ -z "$REGION" ]    && ERRORS="$ERRORS\n- ❌ Azure Region is required"
 
-          # Team name: alphanumeric and hyphens only
           if [ -n "$TEAM" ] && ! echo "$TEAM" | grep -qE '^[a-zA-Z0-9-]+$'; then
-            ERRORS="$ERRORS\n- ❌ Team Name must contain only letters, numbers, and hyphens (got: $TEAM)"
+            ERRORS="$ERRORS\n- ❌ Team Name must contain only letters, numbers, hyphens (got: $TEAM)"
           fi
 
-          # Region: known values only
           if [ -n "$REGION" ] && ! echo "$REGION" | grep -qE '^(euw|usw2|use|aue)$'; then
-            ERRORS="$ERRORS\n- ❌ Azure Region must be one of: euw, usw2, use, aue (got: $REGION)"
+            ERRORS="$ERRORS\n- ❌ Region must be one of: euw, usw2, use, aue (got: $REGION)"
           fi
 
-          # UUID format validator
           validate_uuid() {
             local NAME=$1 VAL=$2
-            [ -z "$VAL" ] && return   # optional field
-            if ! echo "$VAL" | grep -qiE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
+            [ -z "$VAL" ] && return
+            if ! echo "$VAL" | grep -qiE \
+              '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
               ERRORS="$ERRORS\n- ❌ $NAME is not a valid UUID (got: $VAL)"
             fi
           }
@@ -129,32 +123,34 @@ jobs:
           validate_uuid "PRE SP"  "$PRE_SP"
           validate_uuid "PROD SP" "$PROD_SP"
 
-          # At least one env must have data
-          if [ -z "$DEV_SP" ] && [ -z "$INT_SP" ] && [ -z "$PRE_SP" ] && [ -z "$PROD_SP" ]; then
+          if [ -z "$DEV_SP" ] && [ -z "$INT_SP" ] && \
+             [ -z "$PRE_SP" ] && [ -z "$PROD_SP" ]; then
             ERRORS="$ERRORS\n- ❌ At least one Service Principal must be provided"
           fi
 
           if [ -n "$ERRORS" ]; then
-            echo "validation_failed=true" >> $GITHUB_OUTPUT
-            echo "errors=$(printf "$ERRORS")" >> $GITHUB_OUTPUT
+            echo "failed=true"                   >> $GITHUB_OUTPUT
+            printf "$ERRORS" > /tmp/val_errors.txt
           else
-            echo "validation_failed=false" >> $GITHUB_OUTPUT
+            echo "failed=false"                  >> $GITHUB_OUTPUT
           fi
 
-      - name: Comment validation errors on issue
-        if: steps.validate.outputs.validation_failed == 'true'
+      - name: Comment validation errors
+        if: steps.validate.outputs.failed == 'true'
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
+            const errors = fs.readFileSync('/tmp/val_errors.txt', 'utf8');
             await github.rest.issues.createComment({
               owner:        context.repo.owner,
               repo:         context.repo.repo,
               issue_number: ${{ github.event.issue.number }},
-              body: `## ❌ Onboarding validation failed\n\nPlease fix the following and edit the issue to re-trigger:\n\n${{ steps.validate.outputs.errors }}`,
+              body: `## ❌ Onboarding validation failed\n\nPlease fix the following and edit the issue to re-trigger:\n\n${errors}`,
             });
 
       - name: Fail on validation errors
-        if: steps.validate.outputs.validation_failed == 'true'
+        if: steps.validate.outputs.failed == 'true'
         run: exit 1
 
       # ----------------------------------------------------------------
@@ -183,16 +179,15 @@ jobs:
           fi
 
       # ----------------------------------------------------------------
-      # 5. Update dev-state.yaml with yq (DEV + INT)
+      # 5. Update state files with yq
       #
-      #    For each env:
-      #      - Ensure team block exists with SP
-      #      - Append component if not already listed
-      #      - Append each metrics sub if not already listed
-      #
-      #    yq handles all YAML parsing — no sed/awk on structure
+      #    Captures ANY difference vs current state:
+      #      - new team
+      #      - existing team, new component
+      #      - existing team, SP changed
+      #      - existing team, new sub_id
       # ----------------------------------------------------------------
-      - name: Update dev-state.yaml
+      - name: Update dev-state
         if: steps.parse.outputs.dev_sp != '' || steps.parse.outputs.int_sp != ''
         env:
           TEAM:        ${{ steps.parse.outputs.team }}
@@ -203,51 +198,55 @@ jobs:
           METRICS_INT: ${{ steps.parse.outputs.metrics_int }}
           FILE:        terraform/envs/dev-eu/alloy-onboarding-state-dev-eu.yaml
         run: |
-          # Initialise file if it doesn't exist
           [ -f "$FILE" ] || echo '{}' > "$FILE"
 
           update_env() {
             local ENV=$1 SP=$2 METRICS=$3
             [ -z "$SP" ] && return
 
-            echo "Processing $ENV / $TEAM..."
-
             # Create team block if it doesn't exist
             if [ "$(yq ".${ENV}.Teams.${TEAM}" "$FILE")" = "null" ]; then
               yq -i ".${ENV}.Teams.${TEAM}.SP = \"${SP}\"" "$FILE"
               yq -i ".${ENV}.Teams.${TEAM}.Components = []" "$FILE"
               yq -i ".${ENV}.Teams.${TEAM}.Metrics_subs = []" "$FILE"
-              echo "  Created team block: $ENV/$TEAM"
+              echo "  [${ENV}] Created team: $TEAM"
             else
-              # Update SP if it changed
+              # Update SP if changed
               CURRENT_SP=$(yq ".${ENV}.Teams.${TEAM}.SP" "$FILE")
               if [ "$CURRENT_SP" != "$SP" ]; then
                 yq -i ".${ENV}.Teams.${TEAM}.SP = \"${SP}\"" "$FILE"
-                echo "  Updated SP for $ENV/$TEAM: $SP"
+                echo "  [${ENV}] Updated SP: $CURRENT_SP → $SP"
+              else
+                echo "  [${ENV}] SP unchanged: $SP"
               fi
             fi
 
-            # Append component if not present (yq unique prevents duplicates)
-            yq -i ".${ENV}.Teams.${TEAM}.Components += [\"${COMPONENT}\"] | \
+            # Append component if not present (unique prevents duplicates)
+            BEFORE=$(yq ".${ENV}.Teams.${TEAM}.Components" "$FILE")
+            yq -i ".${ENV}.Teams.${TEAM}.Components += [\"${COMPONENT}\"] |
                    .${ENV}.Teams.${TEAM}.Components |= unique" "$FILE"
-            echo "  Ensured component: $COMPONENT"
+            AFTER=$(yq ".${ENV}.Teams.${TEAM}.Components" "$FILE")
+            [ "$BEFORE" != "$AFTER" ] \
+              && echo "  [${ENV}] Added component: $COMPONENT" \
+              || echo "  [${ENV}] Component already present: $COMPONENT"
 
-            # Append each metrics sub if not present
+            # Append new metrics subs
             if [ -n "$METRICS" ]; then
               while IFS= read -r SUB; do
                 SUB=$(echo "$SUB" | xargs)
                 [ -z "$SUB" ] && continue
-
-                # Validate UUID before adding
                 if ! echo "$SUB" | grep -qiE \
                   '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
-                  echo "  ::warning::Skipping invalid UUID for metrics sub: $SUB"
+                  echo "  [${ENV}] ⚠️  Invalid UUID skipped: $SUB"
                   continue
                 fi
-
-                yq -i ".${ENV}.Teams.${TEAM}.Metrics_subs += [\"${SUB}\"] | \
+                BEFORE=$(yq ".${ENV}.Teams.${TEAM}.Metrics_subs" "$FILE")
+                yq -i ".${ENV}.Teams.${TEAM}.Metrics_subs += [\"${SUB}\"] |
                        .${ENV}.Teams.${TEAM}.Metrics_subs |= unique" "$FILE"
-                echo "  Ensured metrics sub: $SUB"
+                AFTER=$(yq ".${ENV}.Teams.${TEAM}.Metrics_subs" "$FILE")
+                [ "$BEFORE" != "$AFTER" ] \
+                  && echo "  [${ENV}] Added sub: $SUB" \
+                  || echo "  [${ENV}] Sub already present: $SUB"
               done <<< "$METRICS"
             fi
           }
@@ -255,13 +254,10 @@ jobs:
           update_env "DEV" "$DEV_SP" "$METRICS_DEV"
           update_env "INT" "$INT_SP" "$METRICS_INT"
 
-          echo "--- dev-state.yaml ---"
+          echo "--- dev-state after update ---"
           cat "$FILE"
 
-      # ----------------------------------------------------------------
-      # 6. Update prd-state.yaml with yq (PRE + PRD)
-      # ----------------------------------------------------------------
-      - name: Update prd-state.yaml
+      - name: Update prd-state
         if: steps.parse.outputs.pre_sp != '' || steps.parse.outputs.prod_sp != ''
         env:
           TEAM:         ${{ steps.parse.outputs.team }}
@@ -278,24 +274,28 @@ jobs:
             local ENV=$1 SP=$2 METRICS=$3
             [ -z "$SP" ] && return
 
-            echo "Processing $ENV / $TEAM..."
-
             if [ "$(yq ".${ENV}.Teams.${TEAM}" "$FILE")" = "null" ]; then
               yq -i ".${ENV}.Teams.${TEAM}.SP = \"${SP}\"" "$FILE"
               yq -i ".${ENV}.Teams.${TEAM}.Components = []" "$FILE"
               yq -i ".${ENV}.Teams.${TEAM}.Metrics_subs = []" "$FILE"
-              echo "  Created team block: $ENV/$TEAM"
+              echo "  [${ENV}] Created team: $TEAM"
             else
               CURRENT_SP=$(yq ".${ENV}.Teams.${TEAM}.SP" "$FILE")
               if [ "$CURRENT_SP" != "$SP" ]; then
                 yq -i ".${ENV}.Teams.${TEAM}.SP = \"${SP}\"" "$FILE"
-                echo "  Updated SP for $ENV/$TEAM: $SP"
+                echo "  [${ENV}] Updated SP: $CURRENT_SP → $SP"
+              else
+                echo "  [${ENV}] SP unchanged: $SP"
               fi
             fi
 
-            yq -i ".${ENV}.Teams.${TEAM}.Components += [\"${COMPONENT}\"] | \
+            BEFORE=$(yq ".${ENV}.Teams.${TEAM}.Components" "$FILE")
+            yq -i ".${ENV}.Teams.${TEAM}.Components += [\"${COMPONENT}\"] |
                    .${ENV}.Teams.${TEAM}.Components |= unique" "$FILE"
-            echo "  Ensured component: $COMPONENT"
+            AFTER=$(yq ".${ENV}.Teams.${TEAM}.Components" "$FILE")
+            [ "$BEFORE" != "$AFTER" ] \
+              && echo "  [${ENV}] Added component: $COMPONENT" \
+              || echo "  [${ENV}] Component already present: $COMPONENT"
 
             if [ -n "$METRICS" ]; then
               while IFS= read -r SUB; do
@@ -303,12 +303,16 @@ jobs:
                 [ -z "$SUB" ] && continue
                 if ! echo "$SUB" | grep -qiE \
                   '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
-                  echo "  ::warning::Skipping invalid UUID: $SUB"
+                  echo "  [${ENV}] ⚠️  Invalid UUID skipped: $SUB"
                   continue
                 fi
-                yq -i ".${ENV}.Teams.${TEAM}.Metrics_subs += [\"${SUB}\"] | \
+                BEFORE=$(yq ".${ENV}.Teams.${TEAM}.Metrics_subs" "$FILE")
+                yq -i ".${ENV}.Teams.${TEAM}.Metrics_subs += [\"${SUB}\"] |
                        .${ENV}.Teams.${TEAM}.Metrics_subs |= unique" "$FILE"
-                echo "  Ensured metrics sub: $SUB"
+                AFTER=$(yq ".${ENV}.Teams.${TEAM}.Metrics_subs" "$FILE")
+                [ "$BEFORE" != "$AFTER" ] \
+                  && echo "  [${ENV}] Added sub: $SUB" \
+                  || echo "  [${ENV}] Sub already present: $SUB"
               done <<< "$METRICS"
             fi
           }
@@ -316,19 +320,140 @@ jobs:
           update_env "PRE" "$PRE_SP"  "$METRICS_PRE"
           update_env "PRD" "$PROD_SP" "$METRICS_PROD"
 
-          echo "--- prd-state.yaml ---"
+          echo "--- prd-state after update ---"
           cat "$FILE"
 
       # ----------------------------------------------------------------
-      # 7. Commit state files only — tfvars and CMs are NOT touched here
+      # 6. Sync state → tfvars (append-only)
+      #
+      #    Reads the updated state files and ensures tfvars reflects them:
+      #      products            = ["team-component", ...]
+      #      product_sp_assignments = [{ product, env, sp_id }, ...]
+      #
+      #    Only runs for the env(s) touched by this issue.
+      # ----------------------------------------------------------------
+      - name: Sync dev-state → dev-eu.tfvars
+        if: steps.parse.outputs.dev_sp != '' || steps.parse.outputs.int_sp != ''
+        env:
+          STATE:  terraform/envs/dev-eu/alloy-onboarding-state-dev-eu.yaml
+          TFVARS: terraform/envs/dev-eu/dev-eu.tfvars
+          ENVS:   "DEV INT"
+        run: |
+          for ENV in $ENVS; do
+            ENV_LOWER=$(echo "$ENV" | tr '[:upper:]' '[:lower:]')
+
+            TEAMS=$(yq ".${ENV}.Teams | keys | .[]" "$STATE" 2>/dev/null || true)
+            [ -z "$TEAMS" ] && continue
+
+            while IFS= read -r TEAM; do
+              [ -z "$TEAM" ] && continue
+
+              SP=$(yq ".${ENV}.Teams.${TEAM}.SP" "$STATE")
+              COMPONENTS=$(yq ".${ENV}.Teams.${TEAM}.Components[]" "$STATE" 2>/dev/null || true)
+
+              while IFS= read -r COMP; do
+                [ -z "$COMP" ] && continue
+                PRODUCT="${TEAM}-${COMP}"
+
+                # Append to products list if not present
+                if ! grep -q "\"${PRODUCT}\"" "$TFVARS"; then
+                  sed -i "/^products\s*=/,/\]/{/\]/i\\  \"${PRODUCT}\",
+                  }" "$TFVARS"
+                  echo "  [products] Added: $PRODUCT"
+                else
+                  echo "  [products] Already present: $PRODUCT"
+                fi
+
+                # Append SP assignment if this product+env combo not present
+                if ! grep -q "product = \"${PRODUCT}\"" "$TFVARS" || \
+                   ! grep -A3 "product = \"${PRODUCT}\"" "$TFVARS" | \
+                     grep -q "env\s*=\s*\"${ENV_LOWER}\""; then
+                  if grep -q "^product_sp_assignments" "$TFVARS"; then
+                    sed -i "/^product_sp_assignments/,/^\]/{/^\]/i\\  { product = \"${PRODUCT}\", env = \"${ENV_LOWER}\", sp_id = \"${SP}\" },
+                    }" "$TFVARS"
+                  else
+                    printf '\nproduct_sp_assignments = [\n  { product = "%s", env = "%s", sp_id = "%s" }\n]\n' \
+                      "$PRODUCT" "$ENV_LOWER" "$SP" >> "$TFVARS"
+                  fi
+                  echo "  [sp_assignments] Added: $PRODUCT / $ENV_LOWER"
+                else
+                  echo "  [sp_assignments] Already present: $PRODUCT / $ENV_LOWER"
+                fi
+
+              done <<< "$COMPONENTS"
+            done <<< "$TEAMS"
+          done
+
+          echo "--- dev-eu.tfvars after sync ---"
+          cat "$TFVARS"
+
+      - name: Sync prd-state → prd-eu.tfvars
+        if: steps.parse.outputs.pre_sp != '' || steps.parse.outputs.prod_sp != ''
+        env:
+          STATE:  terraform/envs/prd-eu/alloy-onboarding-state-prd-eu.yaml
+          TFVARS: terraform/envs/prd-eu/prd-eu.tfvars
+          ENVS:   "PRE PRD"
+        run: |
+          for ENV in $ENVS; do
+            ENV_LOWER=$(echo "$ENV" | tr '[:upper:]' '[:lower:]')
+
+            TEAMS=$(yq ".${ENV}.Teams | keys | .[]" "$STATE" 2>/dev/null || true)
+            [ -z "$TEAMS" ] && continue
+
+            while IFS= read -r TEAM; do
+              [ -z "$TEAM" ] && continue
+
+              SP=$(yq ".${ENV}.Teams.${TEAM}.SP" "$STATE")
+              COMPONENTS=$(yq ".${ENV}.Teams.${TEAM}.Components[]" "$STATE" 2>/dev/null || true)
+
+              while IFS= read -r COMP; do
+                [ -z "$COMP" ] && continue
+                PRODUCT="${TEAM}-${COMP}"
+
+                if ! grep -q "\"${PRODUCT}\"" "$TFVARS"; then
+                  sed -i "/^products\s*=/,/\]/{/\]/i\\  \"${PRODUCT}\",
+                  }" "$TFVARS"
+                  echo "  [products] Added: $PRODUCT"
+                else
+                  echo "  [products] Already present: $PRODUCT"
+                fi
+
+                if ! grep -q "product = \"${PRODUCT}\"" "$TFVARS" || \
+                   ! grep -A3 "product = \"${PRODUCT}\"" "$TFVARS" | \
+                     grep -q "env\s*=\s*\"${ENV_LOWER}\""; then
+                  if grep -q "^product_sp_assignments" "$TFVARS"; then
+                    sed -i "/^product_sp_assignments/,/^\]/{/^\]/i\\  { product = \"${PRODUCT}\", env = \"${ENV_LOWER}\", sp_id = \"${SP}\" },
+                    }" "$TFVARS"
+                  else
+                    printf '\nproduct_sp_assignments = [\n  { product = "%s", env = "%s", sp_id = "%s" }\n]\n' \
+                      "$PRODUCT" "$ENV_LOWER" "$SP" >> "$TFVARS"
+                  fi
+                  echo "  [sp_assignments] Added: $PRODUCT / $ENV_LOWER"
+                else
+                  echo "  [sp_assignments] Already present: $PRODUCT / $ENV_LOWER"
+                fi
+
+              done <<< "$COMPONENTS"
+            done <<< "$TEAMS"
+          done
+
+          echo "--- prd-eu.tfvars after sync ---"
+          cat "$TFVARS"
+
+      # ----------------------------------------------------------------
+      # 7. Commit state + tfvars together
       # ----------------------------------------------------------------
       - name: Commit and push
         id: commit
         run: |
-          git add terraform/envs/dev-eu/alloy-onboarding-state-dev-eu.yaml \
-                  terraform/envs/prd-eu/alloy-onboarding-state-prd-eu.yaml
+          git add \
+            terraform/envs/dev-eu/alloy-onboarding-state-dev-eu.yaml \
+            terraform/envs/prd-eu/alloy-onboarding-state-prd-eu.yaml \
+            terraform/envs/dev-eu/dev-eu.tfvars \
+            terraform/envs/prd-eu/prd-eu.tfvars
+
           if git diff --cached --quiet; then
-            echo "::notice::No changes to state — everything already up to date"
+            echo "::notice::No changes detected — everything already up to date"
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             git commit -m "[alloy-onboarding] ${{ steps.parse.outputs.team }} (issue #${{ github.event.issue.number }})"
@@ -337,40 +462,40 @@ jobs:
           fi
 
       # ----------------------------------------------------------------
-      # 8. Open or update the PR
+      # 8. Open or update PR
       # ----------------------------------------------------------------
       - name: Create or update PR
         if: steps.commit.outputs.changed == 'true'
         uses: actions/github-script@v7
         with:
           script: |
-            const head      = '${{ steps.parse.outputs.branch }}';
-            const team      = '${{ steps.parse.outputs.team }}';
-            const component = '${{ steps.parse.outputs.component }}';
-            const region    = '${{ steps.parse.outputs.region }}';
-            const issueNum  = ${{ github.event.issue.number }};
-            const devSP     = '${{ steps.parse.outputs.dev_sp }}';
-            const intSP     = '${{ steps.parse.outputs.int_sp }}';
-            const preSP     = '${{ steps.parse.outputs.pre_sp }}';
-            const prodSP    = '${{ steps.parse.outputs.prod_sp }}';
+            const head     = '${{ steps.parse.outputs.branch }}';
+            const team     = '${{ steps.parse.outputs.team }}';
+            const comp     = '${{ steps.parse.outputs.component }}';
+            const region   = '${{ steps.parse.outputs.region }}';
+            const issueNum = ${{ github.event.issue.number }};
+            const devSP    = '${{ steps.parse.outputs.dev_sp }}';
+            const intSP    = '${{ steps.parse.outputs.int_sp }}';
+            const preSP    = '${{ steps.parse.outputs.pre_sp }}';
+            const prodSP   = '${{ steps.parse.outputs.prod_sp }}';
 
             const touched = [
-              (devSP || intSP)   ? '`onboarding-dev-state.yaml`' : '',
-              (preSP || prodSP)  ? '`onboarding-prd-state.yaml`' : '',
+              (devSP || intSP)  ? '`dev-eu`' : '',
+              (preSP || prodSP) ? '`prd-eu`' : '',
             ].filter(Boolean).join(', ');
 
             const title = `[alloy-onboarding] ${team} (issue #${issueNum})`;
             const body  = [
-              `## 📡 Alloy Onboarding — State Update`,
+              `## 📡 Alloy Onboarding — State + tfvars Update`,
               ``,
               `Closes #${issueNum}`,
               ``,
               `| Field | Value |`,
               `|-------|-------|`,
               `| Team | \`${team}\` |`,
-              `| Component | \`${component}\` |`,
+              `| Component | \`${comp}\` |`,
               `| Region | \`${region}\` |`,
-              `| State files changed | ${touched} |`,
+              `| Envs touched | ${touched} |`,
               ``,
               `### SP Assignments`,
               `| Env | SP |`,
@@ -380,13 +505,16 @@ jobs:
               `| PRE | \`${preSP  || 'n/a'}\` |`,
               `| PRD | \`${prodSP || 'n/a'}\` |`,
               ``,
-              `### What happens next`,
-              `1. **This PR open** → tfvars synced from state, \`terraform plan\` runs for changed env(s)`,
-              `2. **PR merge** → \`terraform apply\` runs (dev first, then prd behind approval gate)`,
-              `3. **After both applies succeed** → a separate CM PR is opened automatically`,
-              `4. **CM PR merge** → ArgoCD picks up the ConfigMap changes`,
+              `### Files changed`,
+              `- State file(s): source of truth updated`,
+              `- tfvars: \`products\` list and \`product_sp_assignments\` synced`,
               ``,
-              `> ⚠️ ConfigMaps are updated **only after** EventHubs are confirmed live.`,
+              `### What happens after merge`,
+              `Merging this PR triggers **Workflow 2** which will:`,
+              `1. Run \`terraform plan\` then \`terraform apply\` for changed env(s)`,
+              `2. Open a CM PR after all applies succeed`,
+              ``,
+              `> ⚠️ ConfigMaps are updated only after EventHubs are confirmed live.`,
             ].join('\n');
 
             const existing = await github.rest.pulls.list({
@@ -415,11 +543,10 @@ jobs:
                 owner: context.repo.owner, repo: context.repo.repo,
                 issue_number: issueNum,
                 body: [
-                  `✅ PR #${pr.data.number} opened with state file updates.`,
+                  `✅ PR #${pr.data.number} opened with state + tfvars updates for ${touched}.`,
                   ``,
-                  `Terraform plan will run automatically for: ${touched}`,
-                  ``,
-                  `ConfigMaps will only be updated **after** EventHubs are confirmed live.`,
+                  `After merge, Terraform will plan and apply automatically.`,
+                  `ConfigMaps will only be updated after EventHubs are confirmed live.`,
                 ].join('\n'),
               });
               console.log(`Created PR #${pr.data.number}`);
@@ -433,5 +560,5 @@ jobs:
             await github.rest.issues.createComment({
               owner: context.repo.owner, repo: context.repo.repo,
               issue_number: ${{ github.event.issue.number }},
-              body: `ℹ️ No new entries found — all data from this issue already exists in the state files. No changes needed.`,
+              body: `ℹ️ No changes detected — all data from this issue already exists in state and tfvars. Nothing to do.`,
             });
