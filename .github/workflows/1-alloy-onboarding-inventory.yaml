@@ -69,15 +69,15 @@ jobs:
           SAFE=$(echo "$TEAM" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '_')
           BRANCH="feature/onboarding_${SAFE}_#${{ github.event.issue.number }}"
 
-          echo "team=$TEAM"         >> $GITHUB_OUTPUT
+          echo "team=$TEAM"           >> $GITHUB_OUTPUT
           echo "component=$COMPONENT" >> $GITHUB_OUTPUT
-          echo "region=$REGION"     >> $GITHUB_OUTPUT
-          echo "branch=$BRANCH"     >> $GITHUB_OUTPUT
-          echo "safe=$SAFE"         >> $GITHUB_OUTPUT
-          echo "dev_sp=$DEV_SP"     >> $GITHUB_OUTPUT
-          echo "int_sp=$INT_SP"     >> $GITHUB_OUTPUT
-          echo "pre_sp=$PRE_SP"     >> $GITHUB_OUTPUT
-          echo "prod_sp=$PROD_SP"   >> $GITHUB_OUTPUT
+          echo "region=$REGION"       >> $GITHUB_OUTPUT
+          echo "branch=$BRANCH"       >> $GITHUB_OUTPUT
+          echo "safe=$SAFE"           >> $GITHUB_OUTPUT
+          echo "dev_sp=$DEV_SP"       >> $GITHUB_OUTPUT
+          echo "int_sp=$INT_SP"       >> $GITHUB_OUTPUT
+          echo "pre_sp=$PRE_SP"       >> $GITHUB_OUTPUT
+          echo "prod_sp=$PROD_SP"     >> $GITHUB_OUTPUT
 
           echo "✅ Parsed: team=$TEAM component=$COMPONENT region=$REGION"
 
@@ -129,10 +129,10 @@ jobs:
           fi
 
           if [ -n "$ERRORS" ]; then
-            echo "failed=true"                   >> $GITHUB_OUTPUT
+            echo "failed=true"  >> $GITHUB_OUTPUT
             printf "$ERRORS" > /tmp/val_errors.txt
           else
-            echo "failed=false"                  >> $GITHUB_OUTPUT
+            echo "failed=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Comment validation errors
@@ -204,14 +204,12 @@ jobs:
             local ENV=$1 SP=$2 METRICS=$3
             [ -z "$SP" ] && return
 
-            # Create team block if it doesn't exist
             if [ "$(yq ".${ENV}.Teams.${TEAM}" "$FILE")" = "null" ]; then
               yq -i ".${ENV}.Teams.${TEAM}.SP = \"${SP}\"" "$FILE"
               yq -i ".${ENV}.Teams.${TEAM}.Components = []" "$FILE"
               yq -i ".${ENV}.Teams.${TEAM}.Metrics_subs = []" "$FILE"
               echo "  [${ENV}] Created team: $TEAM"
             else
-              # Update SP if changed
               CURRENT_SP=$(yq ".${ENV}.Teams.${TEAM}.SP" "$FILE")
               if [ "$CURRENT_SP" != "$SP" ]; then
                 yq -i ".${ENV}.Teams.${TEAM}.SP = \"${SP}\"" "$FILE"
@@ -221,7 +219,6 @@ jobs:
               fi
             fi
 
-            # Append component if not present (unique prevents duplicates)
             BEFORE=$(yq ".${ENV}.Teams.${TEAM}.Components" "$FILE")
             yq -i ".${ENV}.Teams.${TEAM}.Components += [\"${COMPONENT}\"] |
                    .${ENV}.Teams.${TEAM}.Components |= unique" "$FILE"
@@ -230,7 +227,6 @@ jobs:
               && echo "  [${ENV}] Added component: $COMPONENT" \
               || echo "  [${ENV}] Component already present: $COMPONENT"
 
-            # Append new metrics subs
             if [ -n "$METRICS" ]; then
               while IFS= read -r SUB; do
                 SUB=$(echo "$SUB" | xargs)
@@ -326,11 +322,13 @@ jobs:
       # ----------------------------------------------------------------
       # 6. Sync state → tfvars (append-only)
       #
-      #    Reads the updated state files and ensures tfvars reflects them:
-      #      products            = ["team-component", ...]
-      #      product_sp_assignments = [{ product, env, sp_id }, ...]
+      #    products               = ["team-component", ...]
+      #    product_sp_assignments = [{ product, env, sp_id }, ...]
       #
-      #    Only runs for the env(s) touched by this issue.
+      #    Rules:
+      #      - No commas on object attributes (HCL, not JSON)
+      #      - Comma after every } except the last one in the list
+      #      - terraform fmt -check must pass after this step
       # ----------------------------------------------------------------
       - name: Sync dev-state → dev-eu.tfvars
         if: steps.parse.outputs.dev_sp != '' || steps.parse.outputs.int_sp != ''
@@ -339,31 +337,23 @@ jobs:
           TFVARS: terraform/envs/dev-eu/dev-eu.tfvars
           ENVS:   "DEV INT"
         run: |
-          # ── helpers ──────────────────────────────────────────────
-          # Appends PRODUCT to the products = [...] list.
-          # Handles both single-line and multi-line lists. Idempotent.
           add_product() {
             local FILE=$1 PRODUCT=$2
             if grep -q "\"${PRODUCT}\"" "$FILE"; then
               echo "  [products] Already present: $PRODUCT"; return
             fi
             awk -v p="\"${PRODUCT}\"" '
-              /^products[ \t]*=[ \t]*\[.*\]/ {
-                sub(/\]/, ", " p "]"); print; next }
-              /^products[ \t]*=[ \t]*\[/ { in_p=1; print; next }
-              in_p && /^\]/ {
-                print "  " p ","
-                in_p=0; print; next }
+              /^products[ \t]*=[ \t]*\[.*\]/ { sub(/\]/, ", " p "]"); print; next }
+              /^products[ \t]*=[ \t]*\[/     { in_p=1; print; next }
+              in_p && /^\]/                  { print "  " p; in_p=0; print; next }
               { print }
             ' "$FILE" > /tmp/tfv_tmp && mv /tmp/tfv_tmp "$FILE"
             echo "  [products] Added: $PRODUCT"
           }
 
-          # Appends { product, env, sp_id } to product_sp_assignments.
-          # Creates the block if it doesn't exist. Idempotent.
           add_sp() {
             local FILE=$1 PRODUCT=$2 ENV=$3 SP=$4
-            # Check if this exact product+env combo already present
+            # Idempotency — skip if product+env already present
             if awk -v p="\"$PRODUCT\"" -v e="\"$ENV\"" '
               /product[ \t]*=[ \t]*"/ { if (index($0,p)>0) in_b=1 }
               in_b && /env[ \t]*=[ \t]*"/ { if (index($0,e)>0) { found=1; exit } }
@@ -372,25 +362,29 @@ jobs:
             ' "$FILE"; then
               echo "  [sp] Already present: $PRODUCT / $ENV"; return
             fi
+
             if grep -q "^product_sp_assignments" "$FILE"; then
+              # Step 1 — add comma to current last closing brace (it won't be last anymore)
+              sed -i '/^product_sp_assignments/,/^\]/{/^  }$/{N;/\n\]/!s/^  }/  },/}}' "$FILE"
+              # Step 2 — insert new entry (no trailing comma — it is the new last)
               awk -v p="$PRODUCT" -v e="$ENV" -v sp="$SP" '
                 /^product_sp_assignments[ \t]*=[ \t]*\[/ { in_b=1; print; next }
                 in_b && /^\]/ {
                   print "  {"
-                  print "    product = \"" p "\","
-                  print "    env     = \"" e "\","
+                  print "    product = \"" p "\""
+                  print "    env     = \"" e "\""
                   print "    sp_id   = \"" sp "\""
-                  print "  },"
+                  print "  }"
                   in_b=0; print; next }
                 { print }
               ' "$FILE" > /tmp/tfv_tmp && mv /tmp/tfv_tmp "$FILE"
             else
-              printf '\nproduct_sp_assignments = [\n  {\n    product = "%s",\n    env     = "%s",\n    sp_id   = "%s"\n  },\n]\n' \
+              # Create block from scratch — single entry, no trailing comma
+              printf '\nproduct_sp_assignments = [\n  {\n    product = "%s"\n    env     = "%s"\n    sp_id   = "%s"\n  }\n]\n' \
                 "$PRODUCT" "$ENV" "$SP" >> "$FILE"
             fi
-            echo "  [sp] Added: $PRODUCT / $ENV / $SP"
+            echo "  [sp] Added: $PRODUCT / $ENV"
           }
-          # ─────────────────────────────────────────────────────────
 
           for ENV in $ENVS; do
             ENV_LOWER=$(echo "$ENV" | tr '[:upper:]' '[:lower:]')
@@ -406,7 +400,8 @@ jobs:
                 [ -z "$COMP" ] && continue
                 PRODUCT="${TEAM}-${COMP}"
                 add_product "$TFVARS" "$PRODUCT"
-                [ -n "$SP" ] && add_sp "$TFVARS" "$PRODUCT" "$ENV_LOWER" "$SP"
+                [ -n "$SP" ] && [ "$SP" != "null" ] && \
+                  add_sp "$TFVARS" "$PRODUCT" "$ENV_LOWER" "$SP"
               done <<< "$COMPONENTS"
             done <<< "$TEAMS"
           done
@@ -427,12 +422,9 @@ jobs:
               echo "  [products] Already present: $PRODUCT"; return
             fi
             awk -v p="\"${PRODUCT}\"" '
-              /^products[ \t]*=[ \t]*\[.*\]/ {
-                sub(/\]/, ", " p "]"); print; next }
-              /^products[ \t]*=[ \t]*\[/ { in_p=1; print; next }
-              in_p && /^\]/ {
-                print "  " p ","
-                in_p=0; print; next }
+              /^products[ \t]*=[ \t]*\[.*\]/ { sub(/\]/, ", " p "]"); print; next }
+              /^products[ \t]*=[ \t]*\[/     { in_p=1; print; next }
+              in_p && /^\]/                  { print "  " p; in_p=0; print; next }
               { print }
             ' "$FILE" > /tmp/tfv_tmp && mv /tmp/tfv_tmp "$FILE"
             echo "  [products] Added: $PRODUCT"
@@ -448,23 +440,25 @@ jobs:
             ' "$FILE"; then
               echo "  [sp] Already present: $PRODUCT / $ENV"; return
             fi
+
             if grep -q "^product_sp_assignments" "$FILE"; then
+              sed -i '/^product_sp_assignments/,/^\]/{/^  }$/{N;/\n\]/!s/^  }/  },/}}' "$FILE"
               awk -v p="$PRODUCT" -v e="$ENV" -v sp="$SP" '
                 /^product_sp_assignments[ \t]*=[ \t]*\[/ { in_b=1; print; next }
                 in_b && /^\]/ {
                   print "  {"
-                  print "    product = \"" p "\","
-                  print "    env     = \"" e "\","
+                  print "    product = \"" p "\""
+                  print "    env     = \"" e "\""
                   print "    sp_id   = \"" sp "\""
-                  print "  },"
+                  print "  }"
                   in_b=0; print; next }
                 { print }
               ' "$FILE" > /tmp/tfv_tmp && mv /tmp/tfv_tmp "$FILE"
             else
-              printf '\nproduct_sp_assignments = [\n  {\n    product = "%s",\n    env     = "%s",\n    sp_id   = "%s"\n  },\n]\n' \
+              printf '\nproduct_sp_assignments = [\n  {\n    product = "%s"\n    env     = "%s"\n    sp_id   = "%s"\n  }\n]\n' \
                 "$PRODUCT" "$ENV" "$SP" >> "$FILE"
             fi
-            echo "  [sp] Added: $PRODUCT / $ENV / $SP"
+            echo "  [sp] Added: $PRODUCT / $ENV"
           }
 
           for ENV in $ENVS; do
@@ -481,7 +475,8 @@ jobs:
                 [ -z "$COMP" ] && continue
                 PRODUCT="${TEAM}-${COMP}"
                 add_product "$TFVARS" "$PRODUCT"
-                [ -n "$SP" ] && add_sp "$TFVARS" "$PRODUCT" "$ENV_LOWER" "$SP"
+                [ -n "$SP" ] && [ "$SP" != "null" ] && \
+                  add_sp "$TFVARS" "$PRODUCT" "$ENV_LOWER" "$SP"
               done <<< "$COMPONENTS"
             done <<< "$TEAMS"
           done
