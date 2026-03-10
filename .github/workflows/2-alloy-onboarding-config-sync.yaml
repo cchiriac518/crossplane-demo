@@ -141,7 +141,7 @@ jobs:
 
             for ENV in $ENVS; do
               ENV_LOWER=$(echo "$ENV" | tr '[:upper:]' '[:lower:]')
-              CM="gitops/deployments/alloy/udeodi-${ENV_LOWER}/onboarding/alloy-onboarding-config.yaml"
+              CM="gitops/deployments/alloy/${ENV_LOWER}/onboarding/alloy-onboarding-config.yaml"
 
               [ ! -f "$CM" ] && echo "::warning::CM not found: $CM" && continue
               echo "Processing $ENV → $CM"
