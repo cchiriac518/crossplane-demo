@@ -24,6 +24,12 @@ PRE:
         - dataprocess
       Metrics_subs:
         - 7c8d9e0f-1a2b-4c3d-e4f5-a6b7c8d9e0f1
+    team4:
+      SP: 9d8c7b6a-5f4e-3d2c-1b0a-9e8d7c6b5a4f
+      Components:
+        - ddflows
+      Metrics_subs:
+        - 7c8d9e0f-1a2b-4c3d-e4f5-a6b7c8d9e0f1
 PRD:
   Teams:
     product1:
@@ -48,5 +54,11 @@ PRD:
       SP: 2e4f6a8c-0b2d-4e6f-8a0c-2b4d6e8f0a2c
       Components:
         - dataprocess
+      Metrics_subs:
+        - 7c8d9e0f-1a2b-4c3d-e4f5-a6b7c8d9e0f1
+    team4:
+      SP: 2e4f6a8c-0b2d-4e6f-8a0c-2b4d6e8f0a2c
+      Components:
+        - ddflows
       Metrics_subs:
         - 7c8d9e0f-1a2b-4c3d-e4f5-a6b7c8d9e0f1
