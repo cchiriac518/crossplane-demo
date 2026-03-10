@@ -339,80 +339,103 @@ jobs:
           TFVARS: terraform/envs/dev-eu/dev-eu.tfvars
           ENVS:   "DEV INT"
         run: |
-          # ── helpers ──────────────────────────────────────────────
-          # Appends PRODUCT to the products = [...] list.
-          # Handles both single-line and multi-line lists. Idempotent.
-          add_product() {
-            local FILE=$1 PRODUCT=$2
-            if grep -q "\"${PRODUCT}\"" "$FILE"; then
-              echo "  [products] Already present: $PRODUCT"; return
-            fi
-            awk -v p="\"${PRODUCT}\"" '
-              /^products[ \t]*=[ \t]*\[.*\]/ {
-                sub(/\]/, ", " p "]"); print; next }
-              /^products[ \t]*=[ \t]*\[/ { in_p=1; print; next }
-              in_p && /^\]/ {
-                print "  " p ","
-                in_p=0; print; next }
-              { print }
-            ' "$FILE" > /tmp/tfv_tmp && mv /tmp/tfv_tmp "$FILE"
-            echo "  [products] Added: $PRODUCT"
-          }
+          python3 << 'PYEOF'
+          import re, sys, os
 
-          # Appends { product, env, sp_id } to product_sp_assignments.
-          # Creates the block if it doesn't exist. Idempotent.
-          add_sp() {
-            local FILE=$1 PRODUCT=$2 ENV=$3 SP=$4
-            # Check if this exact product+env combo already present
-            if awk -v p="\"$PRODUCT\"" -v e="\"$ENV\"" '
-              /product[ \t]*=[ \t]*"/ { if (index($0,p)>0) in_b=1 }
-              in_b && /env[ \t]*=[ \t]*"/ { if (index($0,e)>0) { found=1; exit } }
-              in_b && /\}/ { in_b=0 }
-              END { exit !found }
-            ' "$FILE"; then
-              echo "  [sp] Already present: $PRODUCT / $ENV"; return
-            fi
-            if grep -q "^product_sp_assignments" "$FILE"; then
-              awk -v p="$PRODUCT" -v e="$ENV" -v sp="$SP" '
-                /^product_sp_assignments[ \t]*=[ \t]*\[/ { in_b=1; print; next }
-                in_b && /^\]/ {
-                  print "  {"
-                  print "    product = \"" p "\","
-                  print "    env     = \"" e "\","
-                  print "    sp_id   = \"" sp "\""
-                  print "  },"
-                  in_b=0; print; next }
-                { print }
-              ' "$FILE" > /tmp/tfv_tmp && mv /tmp/tfv_tmp "$FILE"
-            else
-              printf '\nproduct_sp_assignments = [\n  {\n    product = "%s",\n    env     = "%s",\n    sp_id   = "%s"\n  },\n]\n' \
-                "$PRODUCT" "$ENV" "$SP" >> "$FILE"
-            fi
-            echo "  [sp] Added: $PRODUCT / $ENV / $SP"
-          }
-          # ─────────────────────────────────────────────────────────
+          state_file  = os.environ["STATE"]
+          tfvars_file = os.environ["TFVARS"]
+          envs        = os.environ["ENVS"].split()
 
-          for ENV in $ENVS; do
-            ENV_LOWER=$(echo "$ENV" | tr '[:upper:]' '[:lower:]')
-            TEAMS=$(yq ".${ENV}.Teams | keys | .[]" "$STATE" 2>/dev/null || true)
-            [ -z "$TEAMS" ] && continue
+          # --- read state via yq (already installed) ---
+          import subprocess
 
-            while IFS= read -r TEAM; do
-              [ -z "$TEAM" ] && continue
-              SP=$(yq ".${ENV}.Teams.${TEAM}.SP" "$STATE")
-              COMPONENTS=$(yq ".${ENV}.Teams.${TEAM}.Components[]" "$STATE" 2>/dev/null || true)
+          def yq(expr):
+              r = subprocess.run(["yq", expr, state_file],
+                                 capture_output=True, text=True)
+              return r.stdout.strip()
 
-              while IFS= read -r COMP; do
-                [ -z "$COMP" ] && continue
-                PRODUCT="${TEAM}-${COMP}"
-                add_product "$TFVARS" "$PRODUCT"
-                [ -n "$SP" ] && add_sp "$TFVARS" "$PRODUCT" "$ENV_LOWER" "$SP"
-              done <<< "$COMPONENTS"
-            done <<< "$TEAMS"
-          done
+          # --- read tfvars ---
+          with open(tfvars_file) as f:
+              tfvars = f.read()
 
-          echo "--- dev-eu.tfvars after sync ---"
-          cat "$TFVARS"
+          def add_product(tfvars, product):
+              q = f'"{product}"'
+              if q in tfvars:
+                  print(f"  [products] Already present: {product}")
+                  return tfvars
+              # single-line list
+              m = re.search(r'(^products\s*=\s*\[)(.*?)(\])', tfvars, re.MULTILINE)
+              if m:
+                  tfvars = tfvars[:m.start(3)] + f', {q}' + tfvars[m.start(3):]
+              print(f"  [products] Added: {product}")
+              return tfvars
+
+          def add_sp(tfvars, product, env, sp_id):
+              # Check already present
+              block_re = re.compile(
+                  r'\{\s*product\s*=\s*"' + re.escape(product) + r'"\s*'
+                  r'env\s*=\s*"' + re.escape(env) + r'"', re.DOTALL)
+              if block_re.search(tfvars):
+                  print(f"  [sp] Already present: {product} / {env}")
+                  return tfvars
+
+              new_block = (
+                  f'  {{\n'
+                  f'    product = "{product}"\n'
+                  f'    env     = "{env}"\n'
+                  f'    sp_id   = "{sp_id}"\n'
+                  f'  }}'
+              )
+
+              if 'product_sp_assignments' in tfvars:
+                  # Add comma to current last entry, then append new (no trailing comma)
+                  # Find the last } before the closing ] of product_sp_assignments
+                  block_match = re.search(
+                      r'(product_sp_assignments\s*=\s*\[)(.*?)(\n\])',
+                      tfvars, re.DOTALL)
+                  if block_match:
+                      inner = block_match.group(2)
+                      # Add comma to last closing brace if not already there
+                      inner = re.sub(r'(\s*\})\s*$', r'\1,', inner.rstrip())
+                      new_inner = inner + '\n' + new_block + '\n'
+                      tfvars = (tfvars[:block_match.start(2)] +
+                                new_inner +
+                                tfvars[block_match.start(3):])
+              else:
+                  tfvars += (
+                      f'\nproduct_sp_assignments = [\n'
+                      f'{new_block}\n'
+                      f']\n'
+                  )
+              print(f"  [sp] Added: {product} / {env}")
+              return tfvars
+
+          for env in envs:
+              env_lower = env.lower()
+              teams_raw = yq(f".{env}.Teams | keys | .[]")
+              if not teams_raw:
+                  continue
+              for team in teams_raw.splitlines():
+                  team = team.strip()
+                  if not team:
+                      continue
+                  sp = yq(f".{env}.Teams.{team}.SP")
+                  comps_raw = yq(f".{env}.Teams.{team}.Components[]")
+                  for comp in comps_raw.splitlines():
+                      comp = comp.strip()
+                      if not comp:
+                          continue
+                      product = f"{team}-{comp}"
+                      tfvars = add_product(tfvars, product)
+                      if sp and sp != "null":
+                          tfvars = add_sp(tfvars, product, env_lower, sp)
+
+          with open(tfvars_file, "w") as f:
+              f.write(tfvars)
+
+          print("--- dev-eu.tfvars after sync ---")
+          print(open(tfvars_file).read())
+          PYEOF
 
       - name: Sync prd-state → prd-eu.tfvars
         if: steps.parse.outputs.pre_sp != '' || steps.parse.outputs.prod_sp != ''
@@ -421,76 +444,111 @@ jobs:
           TFVARS: terraform/envs/prd-eu/prd-eu.tfvars
           ENVS:   "PRE PRD"
         run: |
-          add_product() {
-            local FILE=$1 PRODUCT=$2
-            if grep -q "\"${PRODUCT}\"" "$FILE"; then
-              echo "  [products] Already present: $PRODUCT"; return
-            fi
-            awk -v p="\"${PRODUCT}\"" '
-              /^products[ \t]*=[ \t]*\[.*\]/ {
-                sub(/\]/, ", " p "]"); print; next }
-              /^products[ \t]*=[ \t]*\[/ { in_p=1; print; next }
-              in_p && /^\]/ {
-                print "  " p ","
-                in_p=0; print; next }
-              { print }
-            ' "$FILE" > /tmp/tfv_tmp && mv /tmp/tfv_tmp "$FILE"
-            echo "  [products] Added: $PRODUCT"
-          }
+          python3 << 'PYEOF'
+          import re, sys, os, subprocess
 
-          add_sp() {
-            local FILE=$1 PRODUCT=$2 ENV=$3 SP=$4
-            if awk -v p="\"$PRODUCT\"" -v e="\"$ENV\"" '
-              /product[ \t]*=[ \t]*"/ { if (index($0,p)>0) in_b=1 }
-              in_b && /env[ \t]*=[ \t]*"/ { if (index($0,e)>0) { found=1; exit } }
-              in_b && /\}/ { in_b=0 }
-              END { exit !found }
-            ' "$FILE"; then
-              echo "  [sp] Already present: $PRODUCT / $ENV"; return
-            fi
-            if grep -q "^product_sp_assignments" "$FILE"; then
-              awk -v p="$PRODUCT" -v e="$ENV" -v sp="$SP" '
-                /^product_sp_assignments[ \t]*=[ \t]*\[/ { in_b=1; print; next }
-                in_b && /^\]/ {
-                  print "  {"
-                  print "    product = \"" p "\","
-                  print "    env     = \"" e "\","
-                  print "    sp_id   = \"" sp "\""
-                  print "  },"
-                  in_b=0; print; next }
-                { print }
-              ' "$FILE" > /tmp/tfv_tmp && mv /tmp/tfv_tmp "$FILE"
-            else
-              printf '\nproduct_sp_assignments = [\n  {\n    product = "%s",\n    env     = "%s",\n    sp_id   = "%s"\n  },\n]\n' \
-                "$PRODUCT" "$ENV" "$SP" >> "$FILE"
-            fi
-            echo "  [sp] Added: $PRODUCT / $ENV / $SP"
-          }
+          state_file  = os.environ["STATE"]
+          tfvars_file = os.environ["TFVARS"]
+          envs        = os.environ["ENVS"].split()
 
-          for ENV in $ENVS; do
-            ENV_LOWER=$(echo "$ENV" | tr '[:upper:]' '[:lower:]')
-            TEAMS=$(yq ".${ENV}.Teams | keys | .[]" "$STATE" 2>/dev/null || true)
-            [ -z "$TEAMS" ] && continue
+          def yq(expr):
+              r = subprocess.run(["yq", expr, state_file],
+                                 capture_output=True, text=True)
+              return r.stdout.strip()
 
-            while IFS= read -r TEAM; do
-              [ -z "$TEAM" ] && continue
-              SP=$(yq ".${ENV}.Teams.${TEAM}.SP" "$STATE")
-              COMPONENTS=$(yq ".${ENV}.Teams.${TEAM}.Components[]" "$STATE" 2>/dev/null || true)
+          with open(tfvars_file) as f:
+              tfvars = f.read()
 
-              while IFS= read -r COMP; do
-                [ -z "$COMP" ] && continue
-                PRODUCT="${TEAM}-${COMP}"
-                add_product "$TFVARS" "$PRODUCT"
-                [ -n "$SP" ] && add_sp "$TFVARS" "$PRODUCT" "$ENV_LOWER" "$SP"
-              done <<< "$COMPONENTS"
-            done <<< "$TEAMS"
-          done
+          def add_product(tfvars, product):
+              q = f'"{product}"'
+              if q in tfvars:
+                  print(f"  [products] Already present: {product}")
+                  return tfvars
+              m = re.search(r'(^products\s*=\s*\[)(.*?)(\])', tfvars, re.MULTILINE)
+              if m:
+                  tfvars = tfvars[:m.start(3)] + f', {q}' + tfvars[m.start(3):]
+              print(f"  [products] Added: {product}")
+              return tfvars
 
-          echo "--- prd-eu.tfvars after sync ---"
-          cat "$TFVARS"
+          def add_sp(tfvars, product, env, sp_id):
+              block_re = re.compile(
+                  r'\{\s*product\s*=\s*"' + re.escape(product) + r'"\s*'
+                  r'env\s*=\s*"' + re.escape(env) + r'"', re.DOTALL)
+              if block_re.search(tfvars):
+                  print(f"  [sp] Already present: {product} / {env}")
+                  return tfvars
+
+              new_block = (
+                  f'  {{\n'
+                  f'    product = "{product}"\n'
+                  f'    env     = "{env}"\n'
+                  f'    sp_id   = "{sp_id}"\n'
+                  f'  }}'
+              )
+
+              if 'product_sp_assignments' in tfvars:
+                  block_match = re.search(
+                      r'(product_sp_assignments\s*=\s*\[)(.*?)(\n\])',
+                      tfvars, re.DOTALL)
+                  if block_match:
+                      inner = block_match.group(2)
+                      inner = re.sub(r'(\s*\})\s*$', r'\1,', inner.rstrip())
+                      new_inner = inner + '\n' + new_block + '\n'
+                      tfvars = (tfvars[:block_match.start(2)] +
+                                new_inner +
+                                tfvars[block_match.start(3):])
+              else:
+                  tfvars += (
+                      f'\nproduct_sp_assignments = [\n'
+                      f'{new_block}\n'
+                      f']\n'
+                  )
+              print(f"  [sp] Added: {product} / {env}")
+              return tfvars
+
+          for env in envs:
+              env_lower = env.lower()
+              teams_raw = yq(f".{env}.Teams | keys | .[]")
+              if not teams_raw:
+                  continue
+              for team in teams_raw.splitlines():
+                  team = team.strip()
+                  if not team:
+                      continue
+                  sp = yq(f".{env}.Teams.{team}.SP")
+                  comps_raw = yq(f".{env}.Teams.{team}.Components[]")
+                  for comp in comps_raw.splitlines():
+                      comp = comp.strip()
+                      if not comp:
+                          continue
+                      product = f"{team}-{comp}"
+                      tfvars = add_product(tfvars, product)
+                      if sp and sp != "null":
+                          tfvars = add_sp(tfvars, product, env_lower, sp)
+
+          with open(tfvars_file, "w") as f:
+              f.write(tfvars)
+
+          print("--- prd-eu.tfvars after sync ---")
+          print(open(tfvars_file).read())
+          PYEOF
 
       # ----------------------------------------------------------------
-      # 7. Commit state + tfvars together
+      # 7. Run terraform fmt to ensure tfvars are always clean
+      # ----------------------------------------------------------------
+      - name: Setup Terraform for fmt
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.7"
+
+      - name: Run terraform fmt on tfvars
+        run: |
+          terraform fmt terraform/envs/dev-eu/dev-eu.tfvars || true
+          terraform fmt terraform/envs/prd-eu/prd-eu.tfvars || true
+          echo "✅ tfvars formatted"
+
+      # ----------------------------------------------------------------
+      # 8. Commit state + tfvars together
       # ----------------------------------------------------------------
       - name: Commit and push
         id: commit
