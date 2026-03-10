@@ -1,0 +1,16 @@
+DEV:
+  Teams:
+    product1:
+      SP: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+      Components:
+        - diagnostics
+      Metrics_subs:
+        - 11111111-1111-1111-1111-111111111111
+
+INT:
+  Teams:
+    product1:
+      SP: bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb
+      Components:
+        - diagnostics
+      Metrics_subs: []
