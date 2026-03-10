@@ -1,0 +1,681 @@
+name: ⚙️ Alloy Onboarding — Plan & Apply
+
+on:
+  pull_request:
+    types: [opened, synchronize, closed]
+    paths:
+      - 'terraform/envs/dev-eu/alloy-onboarding-state-dev-eu.yaml'
+      - 'terraform/envs/prd-eu/alloy-onboarding-state-prd-eu.yaml'
+
+jobs:
+  # ----------------------------------------------------------------
+  # Gate — only [alloy-onboarding] PRs
+  # ----------------------------------------------------------------
+  check-title:
+    runs-on: ubuntu-latest
+    outputs:
+      is_onboarding: ${{ steps.check.outputs.result }}
+    steps:
+      - id: check
+        run: |
+          if echo "${{ github.event.pull_request.title }}" | grep -q "\[alloy-onboarding\]"; then
+            echo "result=true"  >> $GITHUB_OUTPUT
+          else
+            echo "result=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ----------------------------------------------------------------
+  # Detect which state files changed vs base branch
+  # ----------------------------------------------------------------
+  detect-changes:
+    needs: check-title
+    if: needs.check-title.outputs.is_onboarding == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      dev_changed: ${{ steps.diff.outputs.dev_changed }}
+      prd_changed: ${{ steps.diff.outputs.prd_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Diff state files vs base
+        id: diff
+        run: |
+          BASE=${{ github.event.pull_request.base.sha }}
+          HEAD=${{ github.event.pull_request.head.sha }}
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD")
+
+          echo "$CHANGED"
+
+          if echo "$CHANGED" | grep -q "onboarding-dev-state.yaml"; then
+            echo "dev_changed=true"  >> $GITHUB_OUTPUT
+          else
+            echo "dev_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+          if echo "$CHANGED" | grep -q "onboarding-prd-state.yaml"; then
+            echo "prd_changed=true"  >> $GITHUB_OUTPUT
+          else
+            echo "prd_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ----------------------------------------------------------------
+  # Sync state → tfvars (append-only, yq to read state)
+  # Runs on PR open/push only, for each changed env
+  # Commits synced tfvars back to the PR branch
+  # ----------------------------------------------------------------
+  sync-tfvars:
+    needs: [check-title, detect-changes]
+    if: |
+      needs.check-title.outputs.is_onboarding == 'true' &&
+      github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tf_env:     dev-eu
+            state_file: terraform/envs/dev-eu/alloy-onboarding-state-dev-eu.yaml
+            envs:       "DEV INT"
+            changed:    ${{ needs.detect-changes.outputs.dev_changed }}
+          - tf_env:     prd-eu
+            state_file: terraform/envs/prd-eu/alloy-onboarding-state-prd-eu.yaml
+            envs:       "PRE PRD"
+            changed:    ${{ needs.detect-changes.outputs.prd_changed }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Skip unchanged env
+        if: matrix.changed != 'true'
+        run: echo "No changes in ${{ matrix.state_file }} — skipping ${{ matrix.tf_env }}" && exit 0
+
+      - name: Install yq
+        if: matrix.changed == 'true'
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Sync state → tfvars (${{ matrix.tf_env }})
+        if: matrix.changed == 'true'
+        env:
+          STATE: ${{ matrix.state_file }}
+          TFVARS: terraform/envs/${{ matrix.tf_env }}/terraform.tfvars
+          ENVS: ${{ matrix.envs }}
+        run: |
+          for ENV in $ENVS; do
+            ENV_LOWER=$(echo "$ENV" | tr '[:upper:]' '[:lower:]')
+
+            # Get all team names for this env
+            TEAMS=$(yq ".${ENV}.Teams | keys | .[]" "$STATE" 2>/dev/null || true)
+            [ -z "$TEAMS" ] && echo "No teams found for $ENV — skipping" && continue
+
+            while IFS= read -r TEAM; do
+              [ -z "$TEAM" ] && continue
+
+              SP=$(yq ".${ENV}.Teams.${TEAM}.SP" "$STATE")
+              COMPONENTS=$(yq ".${ENV}.Teams.${TEAM}.Components[]" "$STATE" 2>/dev/null || true)
+
+              while IFS= read -r COMP; do
+                [ -z "$COMP" ] && continue
+                PRODUCT="${TEAM}-${COMP}"
+
+                # --- Append to products list if not present ---
+                if ! grep -q "\"${PRODUCT}\"" "$TFVARS"; then
+                  sed -i "/^products\s*=/,/\]/{/\]/i\\  \"${PRODUCT}\",
+                  }" "$TFVARS"
+                  echo "  [products] Added: $PRODUCT"
+                else
+                  echo "  [products] Already present: $PRODUCT — skipping"
+                fi
+
+                # --- Append SP assignment if not present ---
+                # Check for the exact product+env combo
+                if ! awk "/product\s*=\s*\"${PRODUCT}\"/{f=1} f && /env\s*=\s*\"${ENV_LOWER}\"/{found=1; exit} f && /\}/{f=0}  END{exit !found}" "$TFVARS" 2>/dev/null; then
+                  if grep -q "^product_sp_assignments" "$TFVARS"; then
+                    sed -i "/^product_sp_assignments/,/^\]/{/^\]/i\\  { product = \"${PRODUCT}\", env = \"${ENV_LOWER}\", sp_id = \"${SP}\" },
+                    }" "$TFVARS"
+                  else
+                    printf '\nproduct_sp_assignments = [\n  { product = "%s", env = "%s", sp_id = "%s" }\n]\n' \
+                      "$PRODUCT" "$ENV_LOWER" "$SP" >> "$TFVARS"
+                  fi
+                  echo "  [sp_assignments] Added: $PRODUCT / $ENV_LOWER / $SP"
+                else
+                  echo "  [sp_assignments] Already present: $PRODUCT / $ENV_LOWER — skipping"
+                fi
+
+              done <<< "$COMPONENTS"
+            done <<< "$TEAMS"
+          done
+
+          echo "--- tfvars after sync ---"
+          cat "$TFVARS"
+
+      - name: Commit synced tfvars
+        if: matrix.changed == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add terraform/envs/${{ matrix.tf_env }}/terraform.tfvars
+          if git diff --cached --quiet; then
+            echo "tfvars already in sync — no commit needed"
+          else
+            git commit -m "chore(onboarding): sync ${{ matrix.tf_env }} tfvars from state [skip ci]"
+            git push origin "${{ github.event.pull_request.head.ref }}"
+          fi
+
+  # ----------------------------------------------------------------
+  # Terraform PLAN
+  # Runs after tfvars are synced, saves plan as artifact
+  # Old plan comments replaced on each push to keep PR clean
+  # ----------------------------------------------------------------
+  plan:
+    needs: [check-title, detect-changes, sync-tfvars]
+    if: |
+      needs.check-title.outputs.is_onboarding == 'true' &&
+      github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tf_env:  dev-eu
+            changed: ${{ needs.detect-changes.outputs.dev_changed }}
+            sub_secret: ARM_SUBSCRIPTION_ID_DEV
+          - tf_env:  prd-eu
+            changed: ${{ needs.detect-changes.outputs.prd_changed }}
+            sub_secret: ARM_SUBSCRIPTION_ID_PRD
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Use the head ref so plan sees the synced tfvars
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Skip unchanged env
+        if: matrix.changed != 'true'
+        run: echo "No changes for ${{ matrix.tf_env }} — skipping plan" && exit 0
+
+      - uses: hashicorp/setup-terraform@v3
+        if: matrix.changed == 'true'
+        with:
+          terraform_version: "~> 1.7"
+
+      - name: Terraform Init
+        if: matrix.changed == 'true'
+        working-directory: terraform/envs/${{ matrix.tf_env }}
+        env:
+          ARM_CLIENT_ID:       ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET:   ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ matrix.tf_env == 'dev-eu' && secrets.ARM_SUBSCRIPTION_ID_DEV || secrets.ARM_SUBSCRIPTION_ID_PRD }}
+          ARM_TENANT_ID:       ${{ secrets.ARM_TENANT_ID }}
+        run: terraform init
+
+      - name: Terraform Plan
+        if: matrix.changed == 'true'
+        id: plan
+        working-directory: terraform/envs/${{ matrix.tf_env }}
+        env:
+          ARM_CLIENT_ID:       ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET:   ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ matrix.tf_env == 'dev-eu' && secrets.ARM_SUBSCRIPTION_ID_DEV || secrets.ARM_SUBSCRIPTION_ID_PRD }}
+          ARM_TENANT_ID:       ${{ secrets.ARM_TENANT_ID }}
+        run: |
+          terraform plan \
+            -var-file=terraform.tfvars \
+            -out=tfplan \
+            2>&1 | tee plan_output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      # Save the binary plan — apply will use this exact plan, not re-plan
+      - name: Upload plan artifact
+        if: matrix.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ matrix.tf_env }}-pr${{ github.event.pull_request.number }}
+          path: |
+            terraform/envs/${{ matrix.tf_env }}/tfplan
+            terraform/envs/${{ matrix.tf_env }}/.terraform.lock.hcl
+          retention-days: 7
+
+      - name: Post plan comment
+        if: matrix.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs   = require('fs');
+            const env  = '${{ matrix.tf_env }}';
+            const prNum = context.payload.pull_request.number;
+            const plan = fs.readFileSync(
+              `terraform/envs/${env}/plan_output.txt`, 'utf8'
+            );
+            const truncated = plan.length > 6000
+              ? plan.slice(0, 6000) + '\n\n...(truncated — see full output in workflow logs)'
+              : plan;
+
+            const marker = `<!-- tf-plan-${env} -->`;
+            const body   = [
+              marker,
+              `### 📋 \`terraform plan\` — \`${env}\``,
+              ``,
+              `<details><summary>Show plan</summary>`,
+              ``,
+              '```hcl',
+              truncated,
+              '```',
+              `</details>`,
+            ].join('\n');
+
+            // Delete previous plan comment for this env to avoid clutter
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: prNum,
+            });
+            for (const c of comments.data) {
+              if (c.body.includes(marker)) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  comment_id: c.id,
+                });
+              }
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: prNum,
+              body,
+            });
+
+  # ----------------------------------------------------------------
+  # Terraform APPLY — dev-eu
+  # On merge only. Downloads the saved plan artifact and applies it.
+  # ----------------------------------------------------------------
+  apply-dev:
+    needs: [check-title, detect-changes]
+    if: |
+      needs.check-title.outputs.is_onboarding == 'true' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true &&
+      needs.detect-changes.outputs.dev_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    environment: dev-eu
+    outputs:
+      result: ${{ steps.apply.outputs.result }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.7"
+
+      - name: Terraform Init (dev-eu)
+        working-directory: terraform/envs/dev-eu
+        env:
+          ARM_CLIENT_ID:       ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET:   ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID_DEV }}
+          ARM_TENANT_ID:       ${{ secrets.ARM_TENANT_ID }}
+        run: terraform init
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-dev-eu-pr${{ github.event.pull_request.number }}
+          path: terraform/envs/dev-eu/
+
+      - name: Terraform Apply (dev-eu)
+        id: apply
+        working-directory: terraform/envs/dev-eu
+        env:
+          ARM_CLIENT_ID:       ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET:   ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID_DEV }}
+          ARM_TENANT_ID:       ${{ secrets.ARM_TENANT_ID }}
+        run: |
+          terraform apply -auto-approve tfplan 2>&1 | tee apply_output.txt
+          echo "result=success" >> $GITHUB_OUTPUT
+
+      - name: Post apply result (dev-eu)
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs     = require('fs');
+            const out    = fs.readFileSync('terraform/envs/dev-eu/apply_output.txt', 'utf8');
+            const status = '${{ job.status }}' === 'success' ? '✅ succeeded' : '❌ failed';
+            const short  = out.length > 4000 ? out.slice(-4000) : out;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: [
+                `### ⚙️ \`terraform apply\` — \`dev-eu\` ${status}`,
+                `<details><summary>Output</summary>`,
+                ``,
+                '```',
+                short,
+                '```',
+                `</details>`,
+              ].join('\n'),
+            });
+
+  # ----------------------------------------------------------------
+  # Terraform APPLY — prd-eu
+  # Runs after dev-eu apply (or independently if only prd changed).
+  # Behind the prd-eu GitHub Environment approval gate.
+  # ----------------------------------------------------------------
+  apply-prd:
+    needs: [check-title, detect-changes, apply-dev]
+    if: |
+      needs.check-title.outputs.is_onboarding == 'true' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true &&
+      needs.detect-changes.outputs.prd_changed == 'true' &&
+      (needs.detect-changes.outputs.dev_changed != 'true' || needs.apply-dev.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    environment: prd-eu
+    outputs:
+      result: ${{ steps.apply.outputs.result }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.7"
+
+      - name: Terraform Init (prd-eu)
+        working-directory: terraform/envs/prd-eu
+        env:
+          ARM_CLIENT_ID:       ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET:   ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID_PRD }}
+          ARM_TENANT_ID:       ${{ secrets.ARM_TENANT_ID }}
+        run: terraform init
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-prd-eu-pr${{ github.event.pull_request.number }}
+          path: terraform/envs/prd-eu/
+
+      - name: Terraform Apply (prd-eu)
+        id: apply
+        working-directory: terraform/envs/prd-eu
+        env:
+          ARM_CLIENT_ID:       ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET:   ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID_PRD }}
+          ARM_TENANT_ID:       ${{ secrets.ARM_TENANT_ID }}
+        run: |
+          terraform apply -auto-approve tfplan 2>&1 | tee apply_output.txt
+          echo "result=success" >> $GITHUB_OUTPUT
+
+      - name: Post apply result (prd-eu)
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs     = require('fs');
+            const out    = fs.readFileSync('terraform/envs/prd-eu/apply_output.txt', 'utf8');
+            const status = '${{ job.status }}' === 'success' ? '✅ succeeded' : '❌ failed';
+            const short  = out.length > 4000 ? out.slice(-4000) : out;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: [
+                `### ⚙️ \`terraform apply\` — \`prd-eu\` ${status}`,
+                `<details><summary>Output</summary>`,
+                ``,
+                '```',
+                short,
+                '```',
+                `</details>`,
+              ].join('\n'),
+            });
+
+  # ----------------------------------------------------------------
+  # Open ConfigMap PR — only after BOTH required applies succeed
+  #
+  # CMs are never touched before EventHubs are confirmed live.
+  # This job reads the state files from main and builds the CM
+  # updates from scratch using yq, then opens a PR for review.
+  # ArgoCD only syncs after that PR is manually approved and merged.
+  # ----------------------------------------------------------------
+  open-cm-pr:
+    needs: [check-title, detect-changes, apply-dev, apply-prd]
+    if: |
+      always() &&
+      needs.check-title.outputs.is_onboarding == 'true' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true &&
+      (
+        needs.apply-dev.result == 'success' ||
+        needs.apply-dev.result == 'skipped'
+      ) &&
+      (
+        needs.apply-prd.result == 'success' ||
+        needs.apply-prd.result == 'skipped'
+      ) &&
+      (
+        needs.apply-dev.result == 'success' ||
+        needs.apply-prd.result == 'success'
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Setup git and create CM branch
+        id: branch
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Extract team + issue from PR title: "[alloy-onboarding] teamname (issue #42)"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          TEAM=$(echo "$PR_TITLE" | sed 's/\[alloy-onboarding\] //' | sed 's/ (issue.*//')
+          ISSUE=$(echo "$PR_TITLE" | grep -oP '(?<=issue #)\d+')
+          SAFE=$(echo "$TEAM" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '_')
+
+          BRANCH="feature/onboarding-cm-${SAFE}-#${ISSUE}"
+          git checkout -b "$BRANCH"
+
+          echo "branch=$BRANCH"   >> $GITHUB_OUTPUT
+          echo "team=$TEAM"       >> $GITHUB_OUTPUT
+          echo "issue=$ISSUE"     >> $GITHUB_OUTPUT
+
+      # ----------------------------------------------------------------
+      # Sync state → ConfigMaps (append-only, yq to read state)
+      #
+      # For each env in each state file:
+      #   EVENTHUBS += team-component-env-region-logs  (per team+component)
+      #   AZURE_SUBSCRIPTION_IDS += each Metrics_sub   (per team)
+      #
+      # The region is read from the tfvars file so it stays consistent.
+      # ----------------------------------------------------------------
+      - name: Sync state → ConfigMaps
+        env:
+          DEV_CHANGED: ${{ needs.detect-changes.outputs.dev_changed }}
+          PRD_CHANGED: ${{ needs.detect-changes.outputs.prd_changed }}
+        run: |
+          sync_state_to_cms() {
+            local STATE=$1
+            local TF_ENV=$2
+            local ENVS=$3
+
+            [ ! -f "$STATE" ] && echo "State file not found: $STATE" && return
+
+            # Read region from the corresponding tfvars
+            REGION=$(grep "^region_short" "terraform/envs/${TF_ENV}/terraform.tfvars" \
+              | awk -F'"' '{print $2}')
+
+            for ENV in $ENVS; do
+              ENV_LOWER=$(echo "$ENV" | tr '[:upper:]' '[:lower:]')
+              CM="gitops/deployments/alloy/udeodi-${ENV_LOWER}/onboarding/configmap.yaml"
+
+              [ ! -f "$CM" ] && echo "::warning::CM not found: $CM" && continue
+              echo "Processing $ENV → $CM"
+
+              TEAMS=$(yq ".${ENV}.Teams | keys | .[]" "$STATE" 2>/dev/null || true)
+              [ -z "$TEAMS" ] && echo "  No teams for $ENV" && continue
+
+              while IFS= read -r TEAM; do
+                [ -z "$TEAM" ] && continue
+
+                # EventHubs: one per team+component combination
+                COMPONENTS=$(yq ".${ENV}.Teams.${TEAM}.Components[]" "$STATE" 2>/dev/null || true)
+                while IFS= read -r COMP; do
+                  [ -z "$COMP" ] && continue
+                  EH="${TEAM}-${COMP}-${ENV_LOWER}-${REGION}-logs"
+
+                  if grep -q "$EH" "$CM"; then
+                    echo "  [EH] Already present: $EH — skipping"
+                  else
+                    sed -i "s|\(EVENTHUBS:.*\)\"|\1, ${EH}\"|" "$CM"
+                    echo "  [EH] Added: $EH"
+                  fi
+                done <<< "$COMPONENTS"
+
+                # Subscription IDs: one per metrics sub
+                SUBS=$(yq ".${ENV}.Teams.${TEAM}.Metrics_subs[]" "$STATE" 2>/dev/null || true)
+                while IFS= read -r SUB; do
+                  [ -z "$SUB" ] && continue
+                  if grep -q "$SUB" "$CM"; then
+                    echo "  [sub] Already present: $SUB — skipping"
+                  else
+                    sed -i "s|\(AZURE_SUBSCRIPTION_IDS:.*\)\"|\1, ${SUB}\"|" "$CM"
+                    echo "  [sub] Added: $SUB"
+                  fi
+                done <<< "$SUBS"
+
+              done <<< "$TEAMS"
+            done
+          }
+
+          [ "$DEV_CHANGED" = "true" ] && \
+            sync_state_to_cms "terraform/envs/dev-eu/alloy-onboarding-state-dev-eu.yaml" "dev-eu" "DEV INT"
+
+          [ "$PRD_CHANGED" = "true" ] && \
+            sync_state_to_cms "terraform/envs/prd-eu/alloy-onboarding-state-prd-eu.yaml" "prd-eu" "PRE PRD"
+
+      - name: Commit and push CM changes
+        id: commit
+        run: |
+          git add gitops/deployments/alloy/
+          if git diff --cached --quiet; then
+            echo "::notice::CMs already up to date — no CM PR needed"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            git commit -m "feat(onboarding): update Alloy CMs for ${{ steps.branch.outputs.team }} [issue #${{ steps.branch.outputs.issue }}]"
+            git push origin "${{ steps.branch.outputs.branch }}"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Open CM PR
+        if: steps.commit.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const team    = '${{ steps.branch.outputs.team }}';
+            const issue   = '${{ steps.branch.outputs.issue }}';
+            const branch  = '${{ steps.branch.outputs.branch }}';
+            const devDone = '${{ needs.apply-dev.result }}' === 'success';
+            const prdDone = '${{ needs.apply-prd.result }}' === 'success';
+
+            const appliedEnvs = [
+              devDone && '`dev-eu` (DEV + INT)',
+              prdDone && '`prd-eu` (PRE + PRD)',
+            ].filter(Boolean).join(', ');
+
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              head:  branch,
+              base:  'main',
+              title: `[alloy-onboarding-cm] ${team} (issue #${issue})`,
+              body:  [
+                `## 🗺️ Alloy Onboarding — ConfigMap Updates`,
+                ``,
+                `Follows up on issue #${issue}`,
+                ``,
+                `**EventHubs confirmed live for:** ${appliedEnvs}`,
+                ``,
+                `### Changes`,
+                `- New EventHub names appended to \`EVENTHUBS\` in env ConfigMaps`,
+                `- New subscription IDs appended to \`AZURE_SUBSCRIPTION_IDS\` in env ConfigMaps`,
+                ``,
+                `### ⚠️ Review before merging`,
+                `- Verify the EventHub names match what Terraform created`,
+                `- Verify subscription IDs are correct for each env`,
+                `- ArgoCD will sync the ConfigMaps **immediately after merge**`,
+              ].join('\n'),
+            });
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: pr.data.number,
+              labels: ['alloy-onboarding', 'configmap', 'argocd'],
+            });
+
+            // Comment on original issue linking the CM PR
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: parseInt(issue),
+              body: [
+                `### ✅ EventHubs are live — ConfigMap PR ready for review`,
+                ``,
+                `PR #${pr.data.number} has been opened with the Alloy ConfigMap updates.`,
+                ``,
+                `**Please review and merge it** to complete the onboarding.`,
+                `ArgoCD will sync the changes to the cluster immediately after merge.`,
+              ].join('\n'),
+            });
+
+            console.log(`CM PR created: #${pr.data.number}`);
+
+      - name: Close original issue after CM PR is opened
+        if: steps.commit.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = parseInt('${{ steps.branch.outputs.issue }}');
+            await github.rest.issues.update({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: issue,
+              state:        'closed',
+              state_reason: 'completed',
+            });
