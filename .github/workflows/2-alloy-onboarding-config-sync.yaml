@@ -89,161 +89,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "~> 1.7"
-
-      - name: Terraform Init (dev-eu)
-        working-directory: terraform/envs/dev-eu
-        env:
-          ARM_CLIENT_ID:       ${{ secrets.ARM_CLIENT_ID }}
-          ARM_CLIENT_SECRET:   ${{ secrets.ARM_CLIENT_SECRET }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID_DEV }}
-          ARM_TENANT_ID:       ${{ secrets.ARM_TENANT_ID }}
-        run: terraform init
-
-      - name: Terraform Plan (dev-eu)
-        working-directory: terraform/envs/dev-eu
-        env:
-          ARM_CLIENT_ID:       ${{ secrets.ARM_CLIENT_ID }}
-          ARM_CLIENT_SECRET:   ${{ secrets.ARM_CLIENT_SECRET }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID_DEV }}
-          ARM_TENANT_ID:       ${{ secrets.ARM_TENANT_ID }}
-        run: |
-          terraform plan \
-            -var-file=dev-eu.tfvars \
-            -out=tfplan \
-            2>&1 | tee plan_output.txt
-
-      - name: Terraform Apply (dev-eu)
-        id: apply
-        working-directory: terraform/envs/dev-eu
-        env:
-          ARM_CLIENT_ID:       ${{ secrets.ARM_CLIENT_ID }}
-          ARM_CLIENT_SECRET:   ${{ secrets.ARM_CLIENT_SECRET }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID_DEV }}
-          ARM_TENANT_ID:       ${{ secrets.ARM_TENANT_ID }}
-        run: |
-          terraform apply -auto-approve tfplan 2>&1 | tee apply_output.txt
-          echo "result=success" >> $GITHUB_OUTPUT
-
-      - name: Comment result on issue (dev-eu)
-        if: always() && needs.detect-changes.outputs.issue_number != ''
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs      = require('fs');
-            const success = '${{ job.status }}' === 'success';
-            const status  = success ? '✅ succeeded' : '❌ failed';
-            const file    = success ? 'apply_output.txt' : 'plan_output.txt';
-            const out     = fs.readFileSync(`terraform/envs/dev-eu/${file}`, 'utf8');
-            const short   = out.length > 4000 ? out.slice(-4000) : out;
-
-            await github.rest.issues.createComment({
-              owner:        context.repo.owner,
-              repo:         context.repo.repo,
-              issue_number: parseInt('${{ needs.detect-changes.outputs.issue_number }}'),
-              body: [
-                `### ⚙️ \`terraform apply\` — \`dev-eu\` ${status}`,
-                `<details><summary>Output</summary>`,
-                ``,
-                '```',
-                short,
-                '```',
-                `</details>`,
-              ].join('\n'),
-            });
-
-  # ----------------------------------------------------------------
-  # Terraform PLAN + APPLY — prd-eu
-  # Runs after dev-eu succeeds (or independently if only prd changed)
-  # Behind prd-eu GitHub Environment approval gate
-  # ----------------------------------------------------------------
-  tf-prd:
-    needs: [detect-changes, tf-dev]
-    if: |
-      always() &&
-      needs.detect-changes.outputs.prd_changed == 'true' &&
-      (
-        needs.detect-changes.outputs.dev_changed != 'true' ||
-        needs.tf-dev.result == 'success'
-      )
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-    environment: prd-eu
-    outputs:
-      result: ${{ steps.apply.outputs.result }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "~> 1.7"
-
-      - name: Terraform Init (prd-eu)
-        working-directory: terraform/envs/prd-eu
-        env:
-          ARM_CLIENT_ID:       ${{ secrets.ARM_CLIENT_ID }}
-          ARM_CLIENT_SECRET:   ${{ secrets.ARM_CLIENT_SECRET }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID_PRD }}
-          ARM_TENANT_ID:       ${{ secrets.ARM_TENANT_ID }}
-        run: terraform init
-
-      - name: Terraform Plan (prd-eu)
-        working-directory: terraform/envs/prd-eu
-        env:
-          ARM_CLIENT_ID:       ${{ secrets.ARM_CLIENT_ID }}
-          ARM_CLIENT_SECRET:   ${{ secrets.ARM_CLIENT_SECRET }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID_PRD }}
-          ARM_TENANT_ID:       ${{ secrets.ARM_TENANT_ID }}
-        run: |
-          terraform plan \
-            -var-file=prd-eu.tfvars \
-            -out=tfplan \
-            2>&1 | tee plan_output.txt
-
-      - name: Terraform Apply (prd-eu)
-        id: apply
-        working-directory: terraform/envs/prd-eu
-        env:
-          ARM_CLIENT_ID:       ${{ secrets.ARM_CLIENT_ID }}
-          ARM_CLIENT_SECRET:   ${{ secrets.ARM_CLIENT_SECRET }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID_PRD }}
-          ARM_TENANT_ID:       ${{ secrets.ARM_TENANT_ID }}
-        run: |
-          terraform apply -auto-approve tfplan 2>&1 | tee apply_output.txt
-          echo "result=success" >> $GITHUB_OUTPUT
-
-      - name: Comment result on issue (prd-eu)
-        if: always() && needs.detect-changes.outputs.issue_number != ''
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs      = require('fs');
-            const success = '${{ job.status }}' === 'success';
-            const status  = success ? '✅ succeeded' : '❌ failed';
-            const file    = success ? 'apply_output.txt' : 'plan_output.txt';
-            const out     = fs.readFileSync(`terraform/envs/prd-eu/${file}`, 'utf8');
-            const short   = out.length > 4000 ? out.slice(-4000) : out;
-
-            await github.rest.issues.createComment({
-              owner:        context.repo.owner,
-              repo:         context.repo.repo,
-              issue_number: parseInt('${{ needs.detect-changes.outputs.issue_number }}'),
-              body: [
-                `### ⚙️ \`terraform apply\` — \`prd-eu\` ${status}`,
-                `<details><summary>Output</summary>`,
-                ``,
-                '```',
-                short,
-                '```',
-                `</details>`,
-              ].join('\n'),
-            });
-
   # ----------------------------------------------------------------
   # Open CM PR — only after ALL required applies succeed
   #
@@ -252,21 +97,7 @@ jobs:
   # ArgoCD syncs only after CM PR is approved and merged.
   # ----------------------------------------------------------------
   open-cm-pr:
-    needs: [detect-changes, tf-dev, tf-prd]
-    if: |
-      always() &&
-      (
-        needs.tf-dev.result == 'success' ||
-        needs.tf-dev.result == 'skipped'
-      ) &&
-      (
-        needs.tf-prd.result == 'success' ||
-        needs.tf-prd.result == 'skipped'
-      ) &&
-      (
-        needs.tf-dev.result  == 'success' ||
-        needs.tf-prd.result  == 'success'
-      )
+    needs: [detect-changes]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -313,9 +144,6 @@ jobs:
       # AZURE_SUBSCRIPTION_IDS += each Metrics_sub    (per team, per env)
       # ----------------------------------------------------------------
       - name: Sync state → ConfigMaps
-        env:
-          DEV_SUCCEEDED: ${{ needs.tf-dev.result == 'success' }}
-          PRD_SUCCEEDED: ${{ needs.tf-prd.result == 'success' }}
         run: |
           sync_cms() {
             local STATE=$1
@@ -329,7 +157,7 @@ jobs:
 
             for ENV in $ENVS; do
               ENV_LOWER=$(echo "$ENV" | tr '[:upper:]' '[:lower:]')
-              CM="gitops/deployments/alloy/udeodi-${ENV_LOWER}/onboarding/configmap.yaml"
+              CM="gitops/deployments/alloy/udeodi-${ENV_LOWER}/onboarding/alloy-onboarding-config.yaml"
 
               [ ! -f "$CM" ] && echo "::warning::CM not found: $CM" && continue
               echo "Processing $ENV → $CM"
@@ -404,12 +232,9 @@ jobs:
             const team       = '${{ steps.branch.outputs.team }}';
             const issueNum   = '${{ steps.branch.outputs.issue }}';
             const branch     = '${{ steps.branch.outputs.branch }}';
-            const devSuccess = '${{ needs.tf-dev.result }}' === 'success';
-            const prdSuccess = '${{ needs.tf-prd.result }}' === 'success';
-
             const liveEnvs = [
-              devSuccess && '`dev-eu` (DEV + INT)',
-              prdSuccess && '`prd-eu` (PRE + PRD)',
+             '`dev-eu` (DEV + INT)',
+             '`prd-eu` (PRE + PRD)',
             ].filter(Boolean).join(', ');
 
             const pr = await github.rest.pulls.create({
