@@ -70,25 +70,6 @@ jobs:
               core.setOutput('issue_number', '');
               console.log('No [alloy-onboarding] PR found for this commit');
             }
-
-  # ----------------------------------------------------------------
-  # Terraform PLAN + APPLY — dev-eu
-  # Skipped if dev-eu.tfvars did not change
-  # ----------------------------------------------------------------
-  tf-dev:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.dev_changed == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-    environment: dev-eu
-    outputs:
-      result: ${{ steps.apply.outputs.result }}
-
-    steps:
-      - uses: actions/checkout@v4
-
   # ----------------------------------------------------------------
   # Open CM PR — only after ALL required applies succeed
   #
