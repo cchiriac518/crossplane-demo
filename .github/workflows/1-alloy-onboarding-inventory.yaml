@@ -339,47 +339,74 @@ jobs:
           TFVARS: terraform/envs/dev-eu/dev-eu.tfvars
           ENVS:   "DEV INT"
         run: |
+          # ── helpers ──────────────────────────────────────────────
+          # Appends PRODUCT to the products = [...] list.
+          # Handles both single-line and multi-line lists. Idempotent.
+          add_product() {
+            local FILE=$1 PRODUCT=$2
+            if grep -q "\"${PRODUCT}\"" "$FILE"; then
+              echo "  [products] Already present: $PRODUCT"; return
+            fi
+            awk -v p="\"${PRODUCT}\"" '
+              /^products[ \t]*=[ \t]*\[.*\]/ {
+                sub(/\]/, ", " p "]"); print; next }
+              /^products[ \t]*=[ \t]*\[/ { in_p=1; print; next }
+              in_p && /^\]/ {
+                print "  " p ","
+                in_p=0; print; next }
+              { print }
+            ' "$FILE" > /tmp/tfv_tmp && mv /tmp/tfv_tmp "$FILE"
+            echo "  [products] Added: $PRODUCT"
+          }
+
+          # Appends { product, env, sp_id } to product_sp_assignments.
+          # Creates the block if it doesn't exist. Idempotent.
+          add_sp() {
+            local FILE=$1 PRODUCT=$2 ENV=$3 SP=$4
+            # Check if this exact product+env combo already present
+            if awk -v p="\"$PRODUCT\"" -v e="\"$ENV\"" '
+              /product[ \t]*=[ \t]*"/ { if (index($0,p)>0) in_b=1 }
+              in_b && /env[ \t]*=[ \t]*"/ { if (index($0,e)>0) { found=1; exit } }
+              in_b && /\}/ { in_b=0 }
+              END { exit !found }
+            ' "$FILE"; then
+              echo "  [sp] Already present: $PRODUCT / $ENV"; return
+            fi
+            if grep -q "^product_sp_assignments" "$FILE"; then
+              awk -v p="$PRODUCT" -v e="$ENV" -v sp="$SP" '
+                /^product_sp_assignments[ \t]*=[ \t]*\[/ { in_b=1; print; next }
+                in_b && /^\]/ {
+                  print "  {"
+                  print "    product = \"" p "\","
+                  print "    env     = \"" e "\","
+                  print "    sp_id   = \"" sp "\""
+                  print "  },"
+                  in_b=0; print; next }
+                { print }
+              ' "$FILE" > /tmp/tfv_tmp && mv /tmp/tfv_tmp "$FILE"
+            else
+              printf '\nproduct_sp_assignments = [\n  {\n    product = "%s",\n    env     = "%s",\n    sp_id   = "%s"\n  },\n]\n' \
+                "$PRODUCT" "$ENV" "$SP" >> "$FILE"
+            fi
+            echo "  [sp] Added: $PRODUCT / $ENV / $SP"
+          }
+          # ─────────────────────────────────────────────────────────
+
           for ENV in $ENVS; do
             ENV_LOWER=$(echo "$ENV" | tr '[:upper:]' '[:lower:]')
-
             TEAMS=$(yq ".${ENV}.Teams | keys | .[]" "$STATE" 2>/dev/null || true)
             [ -z "$TEAMS" ] && continue
 
             while IFS= read -r TEAM; do
               [ -z "$TEAM" ] && continue
-
               SP=$(yq ".${ENV}.Teams.${TEAM}.SP" "$STATE")
               COMPONENTS=$(yq ".${ENV}.Teams.${TEAM}.Components[]" "$STATE" 2>/dev/null || true)
 
               while IFS= read -r COMP; do
                 [ -z "$COMP" ] && continue
                 PRODUCT="${TEAM}-${COMP}"
-
-                # Append to products list if not present
-                if ! grep -q "\"${PRODUCT}\"" "$TFVARS"; then
-                  sed -i "/^products\s*=/,/\]/{/\]/i\\  \"${PRODUCT}\",
-                  }" "$TFVARS"
-                  echo "  [products] Added: $PRODUCT"
-                else
-                  echo "  [products] Already present: $PRODUCT"
-                fi
-
-                # Append SP assignment if this product+env combo not present
-                if ! grep -q "product = \"${PRODUCT}\"" "$TFVARS" || \
-                   ! grep -A3 "product = \"${PRODUCT}\"" "$TFVARS" | \
-                     grep -q "env\s*=\s*\"${ENV_LOWER}\""; then
-                  if grep -q "^product_sp_assignments" "$TFVARS"; then
-                    sed -i "/^product_sp_assignments/,/^\]/{/^\]/i\\  { product = \"${PRODUCT}\", env = \"${ENV_LOWER}\", sp_id = \"${SP}\" },
-                    }" "$TFVARS"
-                  else
-                    printf '\nproduct_sp_assignments = [\n  { product = "%s", env = "%s", sp_id = "%s" }\n]\n' \
-                      "$PRODUCT" "$ENV_LOWER" "$SP" >> "$TFVARS"
-                  fi
-                  echo "  [sp_assignments] Added: $PRODUCT / $ENV_LOWER"
-                else
-                  echo "  [sp_assignments] Already present: $PRODUCT / $ENV_LOWER"
-                fi
-
+                add_product "$TFVARS" "$PRODUCT"
+                [ -n "$SP" ] && add_sp "$TFVARS" "$PRODUCT" "$ENV_LOWER" "$SP"
               done <<< "$COMPONENTS"
             done <<< "$TEAMS"
           done
@@ -394,45 +421,67 @@ jobs:
           TFVARS: terraform/envs/prd-eu/prd-eu.tfvars
           ENVS:   "PRE PRD"
         run: |
+          add_product() {
+            local FILE=$1 PRODUCT=$2
+            if grep -q "\"${PRODUCT}\"" "$FILE"; then
+              echo "  [products] Already present: $PRODUCT"; return
+            fi
+            awk -v p="\"${PRODUCT}\"" '
+              /^products[ \t]*=[ \t]*\[.*\]/ {
+                sub(/\]/, ", " p "]"); print; next }
+              /^products[ \t]*=[ \t]*\[/ { in_p=1; print; next }
+              in_p && /^\]/ {
+                print "  " p ","
+                in_p=0; print; next }
+              { print }
+            ' "$FILE" > /tmp/tfv_tmp && mv /tmp/tfv_tmp "$FILE"
+            echo "  [products] Added: $PRODUCT"
+          }
+
+          add_sp() {
+            local FILE=$1 PRODUCT=$2 ENV=$3 SP=$4
+            if awk -v p="\"$PRODUCT\"" -v e="\"$ENV\"" '
+              /product[ \t]*=[ \t]*"/ { if (index($0,p)>0) in_b=1 }
+              in_b && /env[ \t]*=[ \t]*"/ { if (index($0,e)>0) { found=1; exit } }
+              in_b && /\}/ { in_b=0 }
+              END { exit !found }
+            ' "$FILE"; then
+              echo "  [sp] Already present: $PRODUCT / $ENV"; return
+            fi
+            if grep -q "^product_sp_assignments" "$FILE"; then
+              awk -v p="$PRODUCT" -v e="$ENV" -v sp="$SP" '
+                /^product_sp_assignments[ \t]*=[ \t]*\[/ { in_b=1; print; next }
+                in_b && /^\]/ {
+                  print "  {"
+                  print "    product = \"" p "\","
+                  print "    env     = \"" e "\","
+                  print "    sp_id   = \"" sp "\""
+                  print "  },"
+                  in_b=0; print; next }
+                { print }
+              ' "$FILE" > /tmp/tfv_tmp && mv /tmp/tfv_tmp "$FILE"
+            else
+              printf '\nproduct_sp_assignments = [\n  {\n    product = "%s",\n    env     = "%s",\n    sp_id   = "%s"\n  },\n]\n' \
+                "$PRODUCT" "$ENV" "$SP" >> "$FILE"
+            fi
+            echo "  [sp] Added: $PRODUCT / $ENV / $SP"
+          }
+
           for ENV in $ENVS; do
             ENV_LOWER=$(echo "$ENV" | tr '[:upper:]' '[:lower:]')
-
             TEAMS=$(yq ".${ENV}.Teams | keys | .[]" "$STATE" 2>/dev/null || true)
             [ -z "$TEAMS" ] && continue
 
             while IFS= read -r TEAM; do
               [ -z "$TEAM" ] && continue
-
               SP=$(yq ".${ENV}.Teams.${TEAM}.SP" "$STATE")
               COMPONENTS=$(yq ".${ENV}.Teams.${TEAM}.Components[]" "$STATE" 2>/dev/null || true)
 
               while IFS= read -r COMP; do
                 [ -z "$COMP" ] && continue
                 PRODUCT="${TEAM}-${COMP}"
-
-                if ! grep -q "\"${PRODUCT}\"" "$TFVARS"; then
-                  sed -i "/^products\s*=/,/\]/{/\]/i\\  \"${PRODUCT}\",
-                  }" "$TFVARS"
-                  echo "  [products] Added: $PRODUCT"
-                else
-                  echo "  [products] Already present: $PRODUCT"
-                fi
-
-                if ! grep -q "product = \"${PRODUCT}\"" "$TFVARS" || \
-                   ! grep -A3 "product = \"${PRODUCT}\"" "$TFVARS" | \
-                     grep -q "env\s*=\s*\"${ENV_LOWER}\""; then
-                  if grep -q "^product_sp_assignments" "$TFVARS"; then
-                    sed -i "/^product_sp_assignments/,/^\]/{/^\]/i\\  { product = \"${PRODUCT}\", env = \"${ENV_LOWER}\", sp_id = \"${SP}\" },
-                    }" "$TFVARS"
-                  else
-                    printf '\nproduct_sp_assignments = [\n  { product = "%s", env = "%s", sp_id = "%s" }\n]\n' \
-                      "$PRODUCT" "$ENV_LOWER" "$SP" >> "$TFVARS"
-                  fi
-                  echo "  [sp_assignments] Added: $PRODUCT / $ENV_LOWER"
-                else
-                  echo "  [sp_assignments] Already present: $PRODUCT / $ENV_LOWER"
-                fi
-
+                add_product "$TFVARS" "$PRODUCT"
+                [ -n "$SP" ] && add_sp "$TFVARS" "$PRODUCT" "$ENV_LOWER" "$SP"
               done <<< "$COMPONENTS"
             done <<< "$TEAMS"
           done
