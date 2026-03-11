@@ -69,6 +69,12 @@ DEV:
         - mateeeeeet
       Metrics_subs:
         - 3f4a1b2c-8e9d-4f5a-b6c7-d8e9f0a1b2c3
+    tanos:
+      SP: 7f3c2a1d-4e8b-4f9c-a2d1-3b5e6f7a8c9d
+      Components:
+        - lewl
+      Metrics_subs:
+        - 3f4a1b2c-8e9d-4f5a-b6c7-d8e9f0a1b2c3
 INT:
   Teams:
     product1:
@@ -130,5 +136,11 @@ INT:
       SP: a1b2c3d4-e5f6-7890-abcd-ef1234567890
       Components:
         - mateeeeeet
+      Metrics_subs:
+        - 9e0f1a2b-3c4d-4e5f-a6b7-c8d9e0f1a2b3
+    tanos:
+      SP: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+      Components:
+        - lewl
       Metrics_subs:
         - 9e0f1a2b-3c4d-4e5f-a6b7-c8d9e0f1a2b3
