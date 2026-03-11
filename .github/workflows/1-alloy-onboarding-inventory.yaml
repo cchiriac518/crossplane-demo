@@ -35,10 +35,13 @@ jobs:
               | grep -v '_No response_' \
               | sed '/^[[:space:]]*$/d'
           }
-
+          
+          TEAM=$(get_field "Team Name")
           TEAM=$(echo "$TEAM" | tr '[:upper:]' '[:lower:]')
+          COMPONENT=$(get_field "Component Name")
           COMPONENT=$(echo "$COMPONENT" | tr '[:upper:]' '[:lower:]')
           REGION=$(get_field   "Azure Region")
+          REGION=$(echo "$REGION" | tr '[:upper:]' '[:lower:]')
 
           DEV_SP=$(get_field   "DEV — Service Principal .SP. Object ID or App ID")
           INT_SP=$(get_field   "INT — Service Principal .SP. Object ID or App ID")
