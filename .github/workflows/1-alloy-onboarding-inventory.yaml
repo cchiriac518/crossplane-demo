@@ -36,8 +36,8 @@ jobs:
               | sed '/^[[:space:]]*$/d'
           }
 
-          TEAM=$(get_field     "Team Name")
-          COMPONENT=$(get_field "Component Name")
+          TEAM=$(echo "$TEAM" | tr '[:upper:]' '[:lower:]')
+          COMPONENT=$(echo "$COMPONENT" | tr '[:upper:]' '[:lower:]')
           REGION=$(get_field   "Azure Region")
 
           DEV_SP=$(get_field   "DEV — Service Principal .SP. Object ID or App ID")
