@@ -69,6 +69,8 @@ DEV:
         - mateeeeeet
       Metrics_subs:
         - 3f4a1b2c-8e9d-4f5a-b6c7-d8e9f0a1b2c3
+        - a1b2c3d4-e5f6-7890-abcd-ef1234567891
+        - b2c3d4e5-f6a7-8901-bcde-f12345678902
     tanos:
       SP: 7f3c2a1d-4e8b-4f9c-a2d1-3b5e6f7a8c9d
       Components:
