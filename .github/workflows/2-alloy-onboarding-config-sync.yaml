@@ -225,7 +225,7 @@ jobs:
               owner: context.repo.owner,
               repo:  context.repo.repo,
               head:  branch,
-              base:  'main',
+              base:  'feature/test-logic',
               title: `[alloy-onboarding-cm] ${team} (issue #${issueNum})`,
               body:  [
                 `## 🗺️ Alloy Onboarding — ConfigMap Updates`,
