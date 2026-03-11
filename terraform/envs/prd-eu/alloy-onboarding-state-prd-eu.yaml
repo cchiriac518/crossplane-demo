@@ -68,6 +68,13 @@ PRE:
         - diagnostics
       Metrics_subs:
         - 7c8d9e0f-1a2b-4c3d-e4f5-a6c7c9d9e0f1
+    demo:
+      SP: 7f3c2a1d-4e8b-4f9c-a2d1-3b5e6f7a8c9d
+      Components:
+        - frontend
+      Metrics_subs:
+        - a1b2c3d4-e5f6-7890-abcd-ef1234567891
+        - b2c3d4e5-f6a7-8901-bcde-f12345678902
 PRD:
   Teams:
     product1:
@@ -137,3 +144,10 @@ PRD:
         - diagnostics
       Metrics_subs:
         - 7c8d9e0f-1a2b-4c3d-e4f5-a6b7c8d9e0f1
+    demo:
+      SP: 7f3c2a1d-4e8b-4f9c-a2d1-3b5e6f7a8c9d
+      Components:
+        - frontend
+      Metrics_subs:
+        - a1b2c3d4-e5f6-7890-abcd-ef1234567891
+        - b2c3d4e5-f6a7-8901-bcde-f12345678902

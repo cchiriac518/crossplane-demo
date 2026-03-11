@@ -1,6 +1,6 @@
 region_short          = "euw"
 region_long           = "westeurope"
-products              = ["product1-diagnostics", "product2-diagnostics", "team2-dataproc", "team8-dataproc", "team7-dataprocess", "team4-ddflows", "teemo-tall", "onepiece-zoro", "zet-mart", "zet-martet", "zeteeer-mateeeeeet", "tanos-lewl", "final-diagnostics"]
+products              = ["product1-diagnostics", "product2-diagnostics", "team2-dataproc", "team8-dataproc", "team7-dataprocess", "team4-ddflows", "teemo-tall", "onepiece-zoro", "zet-mart", "zet-martet", "zeteeer-mateeeeeet", "tanos-lewl", "final-diagnostics", "demo-frontend"]
 solution              = "odi"
 capacity              = 1
 alloy_namespace       = "collector"
@@ -122,10 +122,20 @@ product_sp_assignments = [
     product = "final-diagnostics"
     env     = "pre"
     sp_id   = "9d8c7b6a-5f4e-3d2c-1b0a-9e8d7c6b5a4f"
-  }
+  },
   {
     product = "final-diagnostics"
     env     = "prd"
     sp_id   = "2e4f6a8c-0b2d-4e6f-8a0c-2b4d6e8f0a2c"
+  },
+  {
+    product = "demo-frontend"
+    env     = "pre"
+    sp_id   = "7f3c2a1d-4e8b-4f9c-a2d1-3b5e6f7a8c9d"
+  }
+  {
+    product = "demo-frontend"
+    env     = "prd"
+    sp_id   = "7f3c2a1d-4e8b-4f9c-a2d1-3b5e6f7a8c9d"
   }
 ]
