@@ -68,6 +68,11 @@ PRE:
         - diagnostics
       Metrics_subs:
         - 7c8d9e0f-1a2b-4c3d-e4f5-a6c7c9d9e0f1
+    gragas:
+      SP: cccccccc-cccc-cccc-cccc-cccccccccccc
+      Components:
+        - diagnostics
+      Metrics_subs: []
 PRD:
   Teams:
     product1:
@@ -137,3 +142,8 @@ PRD:
         - diagnostics
       Metrics_subs:
         - 7c8d9e0f-1a2b-4c3d-e4f5-a6b7c8d9e0f1
+    gragas:
+      SP: cccccccc-cccc-cccc-cccc-cccccccccccc
+      Components:
+        - diagnostics
+      Metrics_subs: []
