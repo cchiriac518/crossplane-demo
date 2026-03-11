@@ -569,7 +569,7 @@ jobs:
             } else {
               const pr = await github.rest.pulls.create({
                 owner: context.repo.owner, repo: context.repo.repo,
-                title, body, head, base: 'main',
+                title, body, head, base: 'feature/test-logic',
               });
               await github.rest.issues.addLabels({
                 owner: context.repo.owner, repo: context.repo.repo,
