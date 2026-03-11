@@ -81,6 +81,11 @@ DEV:
         - diagnostics
       Metrics_subs:
         - 9e0f1a2b-3c4d-4e5f-a6b7-c8d9e0f1a2b3
+    gragas:
+      SP: cccccccc-cccc-cccc-cccc-cccccccccccc
+      Components:
+        - diagnostics
+      Metrics_subs: []
 INT:
   Teams:
     product1:
@@ -156,3 +161,8 @@ INT:
         - diagnostics
       Metrics_subs:
         - 9e0f1a2b-3c4d-4e5f-a6b7-c8d9e0f1a2b3
+    gragas:
+      SP: cccccccc-cccc-cccc-cccc-cccccccccccc
+      Components:
+        - diagnostics
+      Metrics_subs: []
