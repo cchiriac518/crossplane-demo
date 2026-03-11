@@ -3,5 +3,5 @@ kind: ConfigMap
 metadata:
   name: alloy-onboarding-config
 data:
-  AZURE_SUBSCRIPTION_IDS: "7f3c2a1d-4e8b-4f9c-a2d1-3b5e6f7a8c9d, 22222222-2222-2222-2222-222222222222, 7c8d9e0f-1a2b-4c3d-e4f5-a6b7c8d9e0f1"
-  EVENTHUBS: "product1-diagnostics-pre-euw-logs, product2-diagnostics-pre-euw-logs, team2-dataproc-pre-euw-logs, team8-dataproc-pre-euw-logs, team7-dataprocess-pre-euw-logs, team4-ddflows-pre-euw-logs, teemo-tall-pre-euw-logs, onepiece-zoro-pre-euw-logs, zet-mart-pre-euw-logs"  
+  AZURE_SUBSCRIPTION_IDS: "7f3c2a1d-4e8b-4f9c-a2d1-3b5e6f7a8c9d, 22222222-2222-2222-2222-222222222222, 7c8d9e0f-1a2b-4c3d-e4f5-a6b7c8d9e0f1, 7c8d9e0f-1a2b-4c3d-e4f5-a6b7c9d9e0f1"
+  EVENTHUBS: "product1-diagnostics-pre-euw-logs, product2-diagnostics-pre-euw-logs, team2-dataproc-pre-euw-logs, team8-dataproc-pre-euw-logs, team7-dataprocess-pre-euw-logs, team4-ddflows-pre-euw-logs, teemo-tall-pre-euw-logs, onepiece-zoro-pre-euw-logs, zet-mart-pre-euw-logs, zet-martet-pre-euw-logs"  
