@@ -54,6 +54,14 @@ DEV:
         - 3f4a1b2c-8e9d-4f5a-b6c7-d8e9f0a1b2c3
         - 7c8d9e0f-1a2b-4c3d-e4f5-a6b7c8d9e0f1
         - a1b2c3d4-5e6f-4a7b-8c9d-e0f1a2b3c4d5
+    zet:
+      SP: 7f3c2a1d-4e8b-4f9c-a2d1-3b5e6f7a8c9d
+      Components:
+        - mart
+      Metrics_subs:
+        - 3f4a1b2c-8e9d-4f5a-b6c7-d8e9f0a1b2c3
+        - 7c8d9e0f-1a2b-4c3d-e4f5-a6b7c8d9e0f1
+        - a1b2c3d4-5e6f-4a7b-8c9d-e0f1a2b3c4d5
 INT:
   Teams:
     product1:
@@ -100,6 +108,13 @@ INT:
       SP: a1b2c3d4-e5f6-7890-abcd-ef1234567890
       Components:
         - zoro
+      Metrics_subs:
+        - 9e0f1a2b-3c4d-4e5f-a6b7-c8d9e0f1a2b3
+        - 2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a
+    zet:
+      SP: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+      Components:
+        - mart
       Metrics_subs:
         - 9e0f1a2b-3c4d-4e5f-a6b7-c8d9e0f1a2b3
         - 2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a
